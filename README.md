@@ -32,3 +32,8 @@ App para calcular la marca de salida de los viáticos C100 / C200 y enviar el re
 - Las marcas no se guardan: viven en la pantalla hasta que la cerrás o tocás "Borrar".
 - La ubicación se usa solo para elegir la localidad; no se guarda ni se envía.
 - En el teléfono quedan solo (si lo elegís) el número de WhatsApp, las horas requeridas y una copia de la lista de localidades.
+
+## Instalar en el celular
+- **Android (Chrome):** abrir la app → menú ⋮ → **Instalar app** (o "Agregar a pantalla principal").
+- **iPhone (Safari):** abrir la app → botón Compartir → **Agregar a inicio**.
+Queda con ícono propio, se abre a pantalla completa y funciona sin internet con la última copia de las localidades.
