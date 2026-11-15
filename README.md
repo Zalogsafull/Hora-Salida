@@ -1,34 +1,34 @@
-# Hora Salida · puesta en marcha
+# Hora Salida
 
-## 1. Base pública de localidades (Google Sheet)
-1. Creá una Google Sheet nueva (ej. "Hora Salida - Localidades").
-2. Extensiones → Apps Script → borrá lo que haya y pegá `Code.gs`. Guardá.
-3. Elegí la función `setup` y tocá **Ejecutar** (autorizá la primera vez). Carga las 45 localidades.
-4. Implementar → Nueva implementación → tipo **Aplicación web**
-   - Ejecutar como: **Yo**
-   - Quién tiene acceso: **Cualquier usuario**
-5. Copiá la URL que termina en `/exec`.
+App para calcular la marca de salida de los viáticos C100 / C200 y enviar el registro por WhatsApp.
 
-> Si después cambiás `Code.gs`, usá Implementar → Gestionar implementaciones → editar → Nueva versión (así la URL no cambia).
+**App:** https://zalogsafull.github.io/Hora-Salida/
+**Localidades:** hoja `HORARIOS LOCALIDADES` de la planilla [HORA SALIDA](https://docs.google.com/spreadsheets/d/19arxGs2vqUwVSjruWBdQs78JGFwxgkoO3oPcZgGYGp0/edit) (cualquiera con el link puede verla y editarla).
 
-## 2. La app (GitHub Pages)
-1. En `index.html`, pegá la URL en `const API_URL_DEFAULT = '...';` (así todos los que la abran usan la misma base).
-2. Repo `Hora-Salida` → Settings → Pages → Deploy from a branch → `main` / root.
-3. Queda en https://zalogsafull.github.io/Hora-Salida/ → en el celular, menú de Chrome → **Agregar a pantalla principal**.
+## Cómo se usa
+1. Elegís el tipo de viático.
+2. La app detecta la localidad donde estás (si está a menos de 30 km de una de la lista); si no, la elegís: departamento → ciudad.
+3. Cargás la marca de entrada → te dice desde qué hora podés hacer la marca de salida.
+4. Cargás la marca de salida → te da la hora de salida y si cumplís las horas.
+5. "Enviar registro por WhatsApp".
 
-## Ubicación
-- Al abrir, la app pide permiso de ubicación y elige la localidad de la lista más cercana (hasta 30 km). Se puede cambiar a mano o desactivar en Ajustes.
-- Cada localidad tiene coordenadas (columnas `lat` y `lng` de la hoja). Al agregar una nueva, tocá "📍 Estoy acá" estando en el lugar, o completá lat/lng en la hoja.
-- La ubicación no se guarda ni se envía a ningún lado.
-
-## Privacidad
-- Localidades: públicas, cualquiera con el link puede leer y editar (la hoja guarda fecha de cada cambio; podés ver el historial de versiones de la Sheet).
-- Marcas: solo en memoria; se borran al cerrar o con "Borrar datos". No se envían a ningún servidor.
-- En el dispositivo solo se guarda (si lo elegís): el número de WhatsApp, las horas requeridas y una copia de la lista de localidades para usar sin conexión.
-
-## Cálculos (iguales a HORA SALIDA.xlsx)
+## Cálculos (iguales a la planilla)
 - Hora de entrada = marca de entrada − horas de viaje de la localidad de entrada
 - Hora de salida = marca de salida + horas de viaje de la localidad de salida
 - Marca de salida desde = hora de entrada + horas a cumplir − viaje de vuelta
   (C100 7:15 · C200 1 día 12:00 · C200 2 días 10:00 el día de la vuelta; editables en Ajustes)
 - Horas cumplidas = hora de salida − hora de entrada
+
+## Localidades
+- La app lee la hoja directamente. Para cambiar algo alcanza con editar la planilla: Departamento (solo en la primera fila de cada bloque), Localidad, Horas de traslado.
+- Columnas opcionales **D = Lat** y **E = Lng**: coordenadas para que la app reconozca la localidad por ubicación. Las 45 originales ya tienen coordenadas dentro de la app.
+
+### Editar desde la app (opcional)
+1. En la planilla: Extensiones → Apps Script → pegar `Code.gs` → Guardar.
+2. Implementar → Nueva implementación → Aplicación web · Ejecutar como: **Yo** · Acceso: **Cualquier usuario**.
+3. Copiar la URL `/exec` y ponerla en `API_URL_DEFAULT` de `index.html` (o en Ajustes de la app).
+
+## Privacidad
+- Las marcas no se guardan: viven en la pantalla hasta que la cerrás o tocás "Borrar".
+- La ubicación se usa solo para elegir la localidad; no se guarda ni se envía.
+- En el teléfono quedan solo (si lo elegís) el número de WhatsApp, las horas requeridas y una copia de la lista de localidades.

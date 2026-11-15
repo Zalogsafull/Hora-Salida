@@ -99,7 +99,7 @@
   </div>
 
   <div class="card">
-    <h2>Entrada <button class="gps" type="button" id="gpsEnt">📍 Mi ubicación</button></h2>
+    <h2>Entrada</h2>
     <div class="g3">
       <div><label for="entDep">Departamento</label><select id="entDep"></select></div>
       <div><label for="entLoc">Ciudad</label><select id="entLoc"></select></div>
@@ -109,7 +109,7 @@
   </div>
 
   <div class="card">
-    <h2><span id="salTitle">Salida</span> <button class="gps" type="button" id="gpsSal">📍 Mi ubicación</button></h2>
+    <h2><span id="salTitle">Salida</span></h2>
     <div class="g3">
       <div><label for="salDep">Departamento</label><select id="salDep"></select></div>
       <div><label for="salLoc">Ciudad</label><select id="salLoc"></select></div>
@@ -198,11 +198,8 @@
     <div class="f"><label for="dLoc">Localidad</label><input id="dLoc" required maxlength="60"></div>
     <div class="f"><label for="dHrs">Horas de traslado</label><input id="dHrs" type="time" required></div>
     <div class="f">
-      <label>Ubicación (para detectarla con GPS)</label>
-      <div style="display:flex;gap:8px;align-items:center">
-        <span class="note" id="dCoords" style="flex:1">Sin ubicación</span>
-        <button class="gps" type="button" id="dGps">📍 Estoy acá</button>
-      </div>
+      <label style="display:flex;gap:8px;align-items:center;font-weight:500;color:var(--ink)"><input type="checkbox" id="dHere" style="width:auto;min-height:0"> Estoy en esta localidad ahora</label>
+      <div class="note" id="dCoords">Sirve para que la app la reconozca sola la próxima vez.</div>
     </div>
     <div class="hint bad" id="dErr"></div>
     <div class="btns">
@@ -217,6 +214,10 @@
 /* ===================== CONFIG =====================
    URL de la Google Apps Script con la base compartida de localidades. */
 const API_URL_DEFAULT = '';
+/* Planilla HORA SALIDA en Google Sheets (lectura pública de la hoja HORARIOS LOCALIDADES) */
+const SHEET_ID = '19arxGs2vqUwVSjruWBdQs78JGFwxgkoO3oPcZgGYGp0';
+const SHEET_TAB = 'HORARIOS LOCALIDADES';
+const SHEET_URL = 'https://docs.google.com/spreadsheets/d/'+SHEET_ID+'/edit';
 
 /* Lista inicial (HORA SALIDA.xlsx) + coordenadas aproximadas */
 const SEED = [
@@ -227,7 +228,7 @@ const SEED = [
  ['Tacuarembó','Tacuarembó C.T.','06:00',-31.711,-55.982],['Tacuarembó','Paso de los Toros','04:30',-32.817,-56.511],['Tacuarembó','Pampa','05:00',-32.270,-56.380],
  ['Cerro Largo','Río Branco','06:30',-32.597,-53.384],['Cerro Largo','Melo','06:45',-32.370,-54.168],['Cerro Largo','Fraile Muerto','06:00',-32.515,-54.523],
  ['Rivera','Rivera','07:30',-30.905,-55.551],['Rivera','Tranqueras','07:00',-31.200,-55.758],['Rivera','Vichadero','07:30',-31.776,-54.693],
- ['Durazno','Durazno','03:30',-33.381,-56.523],['Durazno','Sarandí del Yí','04:00',-33.344,-55.632],['Durazno','Cerro Chato','04:30',-33.098,-55.135],
+ ['Durazno','Durazno','03:30',-33.381,-56.523],['Durazno','Sarandí del Yí','03:30',-33.344,-55.632],['Durazno','Cerro Chato','04:30',-33.098,-55.135],
  ['Florida','Florida','02:15',-34.099,-56.214],['Florida','José Batlle y Ordóñez','04:00',-33.468,-55.124],
  ['Colonia','Colonia','03:00',-34.463,-57.840],['Colonia','Carmelo','04:00',-34.000,-58.283],['Colonia','Colonia Valdense','02:30',-34.339,-57.240],['Colonia','Tararira','03:00',-34.268,-57.616],['Colonia','Conchillas','03:45',-34.168,-58.033],
  ['San José','San José','02:00',-34.338,-56.713],
@@ -238,7 +239,7 @@ const SEED = [
  ['Río Negro','Fray Bentos','05:30',-33.117,-58.300],
  ['Soriano','Mercedes','05:00',-33.250,-58.033],['Soriano','Dolores','05:00',-33.533,-58.217],['Soriano','Palmitas','04:30',-33.506,-57.799],['Soriano','José E. Rodó','04:00',-33.693,-57.534],
  ['Canelones','San Ramón','02:00',-34.291,-55.956]
-].map((r,i)=>({id:'s'+i,departamento:r[0],localidad:r[1],horas:r[2],lat:r[3],lng:r[4]}));
+].map(r=>({id:'',departamento:r[0],localidad:r[1],horas:r[2],lat:r[3],lng:r[4]}));
 
 const REQ_DEFAULT = {C100:'07:15', C200_1:'12:00', C200_2:'10:00'};
 const TIPOS = {C100:'C100 corto', C200_1:'C200 1 día', C200_2:'C200 2 días'};
@@ -253,18 +254,19 @@ const LS = {
 
 /* ---------- estado ---------- */
 let apiUrl = LS.get('hs_api', API_URL_DEFAULT) || API_URL_DEFAULT;
-let locs = LS.get('hs_locs_cache', null) || SEED.slice();
+let locs = LS.get('hs_locs2', null) || SEED.slice();
 let online = false;
 let req = Object.assign({}, REQ_DEFAULT, LS.get('hs_req', {}));
 let tipo = LS.get('hs_tipo','C200_1');
 // datos personales: SOLO en memoria
-const P = {ent:null, sal:null, marcaEnt:'', marcaSal:'', salTouched:false, gpsNote:{ent:'',sal:''}};
+const P = {ent:null, sal:null, marcaEnt:'', marcaSal:'', salTouched:false};
 
 /* ---------- utilidades ---------- */
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const norm = s => String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/\s+/g,' ').trim();
 const cmp = (a,b)=>a.localeCompare(b,'es');
+SEED.forEach(x=>x.id=norm(x.localidad));
 function toMin(s){ if(!s) return null; const m=/^(\d{1,2}):(\d{2})/.exec(String(s).trim()); return m?(+m[1])*60+(+m[2]):null; }
 function hhmm(min){ const w=((min%1440)+1440)%1440; return String(Math.floor(w/60)).padStart(2,'0')+':'+String(w%60).padStart(2,'0'); }
 function dur(min){ const a=Math.abs(min); return (min<0?'−':'')+Math.floor(a/60)+':'+String(a%60).padStart(2,'0'); }
@@ -275,7 +277,8 @@ const byId = id => locs.find(l=>l.id===id) || null;
 function km(a,b,c,d){ const R=6371,r=Math.PI/180,x=(c-a)*r,y=(d-b)*r; const h=Math.sin(x/2)**2+Math.cos(a*r)*Math.cos(c*r)*Math.sin(y/2)**2; return 2*R*Math.asin(Math.sqrt(h)); }
 function coordsOf(l){
   if(l && isFinite(parseFloat(l.lat)) && isFinite(parseFloat(l.lng)) && l.lat!=='' ) return [parseFloat(l.lat),parseFloat(l.lng)];
-  const s=SEED.find(x=>norm(x.localidad)===norm(l&&l.localidad)); return s?[s.lat,s.lng]:null;
+  const n=norm(l&&l.localidad).replace('pan dde azucar','pan de azucar');
+  const s=SEED.find(x=>x.id===n); return s?[s.lat,s.lng]:null;
 }
 
 /* ---------- cálculo (igual a la planilla) ----------
@@ -317,14 +320,14 @@ function setPlace(w, id, fromUser){
   const prev=P[w]; P[w]=id;
   if(w==='sal' && fromUser) P.salTouched=true;
   // la salida copia la entrada solo si todavía está vacía (o si vino del GPS y nadie la tocó)
-  if(w==='ent' && !P.salTouched && (!fromUser || (!P.salGps && (!P.sal || P.sal===prev)))){ P.sal=id; P.gpsNote.sal=P.gpsNote.ent; if(!fromUser) P.salGps=true; }
+  if(w==='ent' && !P.salTouched && (!fromUser || (!P.salGps && (!P.sal || P.sal===prev)))){ P.sal=id; if(!fromUser) P.salGps=true; }
   syncSelects(); render();
 }
 for(const w of ['ent','sal']){
   $(w+'Dep').addEventListener('change', e=>{
-    P.gpsNote[w]=''; const id=fillLoc($(w+'Loc'), e.target.value, null); setPlace(w, id||null, true);
+    const id=fillLoc($(w+'Loc'), e.target.value, null); setPlace(w, id||null, true);
   });
-  $(w+'Loc').addEventListener('change', e=>{ P.gpsNote[w]=''; setPlace(w, e.target.value||null, true); });
+  $(w+'Loc').addEventListener('change', e=>{ setPlace(w, e.target.value||null, true); });
 }
 
 /* ---------- render cálculo ---------- */
@@ -332,8 +335,8 @@ function render(){
   const r=compute();
   document.querySelectorAll('#tipoSeg button').forEach(x=>x.classList.toggle('on',x.dataset.t===tipo));
   $('salTitle').textContent = tipo==='C200_2' ? 'Salida · día de la vuelta' : 'Salida';
-  $('entHint').textContent = r.le ? ('Viaje '+dur(r.ida)+(P.gpsNote.ent?' · '+P.gpsNote.ent:'')+(r.entFic!=null?' · hora de entrada '+hhmm(r.entFic)+dayNote(r.entFic):'')) : (P.gpsNote.ent||'');
-  $('salHint').textContent = r.ls ? ('Viaje '+dur(r.vta)+(P.gpsNote.sal?' · '+P.gpsNote.sal:'')) : (P.gpsNote.sal||'');
+  $('entHint').textContent = r.le ? ('Viaje '+dur(r.ida)+(r.entFic!=null?' · hora de entrada '+hhmm(r.entFic)+dayNote(r.entFic):'')) : '';
+  $('salHint').textContent = r.ls ? ('Viaje '+dur(r.vta)) : '';
 
   const sub=$('heroSub');
   if(r.salFic!=null && r.entFic!=null){
@@ -391,10 +394,10 @@ $('btnCopy').addEventListener('click', async ()=>{
   catch(e){ const rg=document.createRange(); rg.selectNodeContents($('msgPrev')); const s=getSelection(); s.removeAllRanges(); s.addRange(rg); toast('Seleccionado: copialo manualmente'); }
 });
 $('btnClear').addEventListener('click', ()=>{
-  P.ent=P.sal=null; P.marcaEnt=P.marcaSal=''; P.salTouched=false; P.salGps=false; P.gpsNote={ent:'',sal:''};
+  P.ent=P.sal=null; P.marcaEnt=P.marcaSal=''; P.salTouched=false; P.salGps=false;
   $('marcaEnt').value=$('marcaSal').value=''; $('entDep').value=$('salDep').value='';
   syncSelects(); render(); toast('Datos borrados');
-  if(LS.get('hs_autogps',true)) locate('ent',false);
+  if(LS.get('hs_autogps',true)) locate();
 });
 
 /* ---------- ubicación ---------- */
@@ -403,27 +406,14 @@ function nearest(lat,lng){
   for(const l of locs){ const c=coordsOf(l); if(!c) continue; const d=km(lat,lng,c[0],c[1]); if(!best||d<best.d) best={l,d}; }
   return best;
 }
-function locate(w, manual){
-  if(!navigator.geolocation){ if(manual) toast('Este navegador no da ubicación'); return; }
-  P.gpsNote[w]='📍 buscando ubicación…'; render();
+// Silencioso: si estás a menos de GPS_MAX_KM de una localidad de la lista, la elige; si no, no hace nada.
+function locate(){
+  if(!navigator.geolocation) return;
   navigator.geolocation.getCurrentPosition(pos=>{
     const b=nearest(pos.coords.latitude,pos.coords.longitude);
-    if(b && b.d<=GPS_MAX_KM){
-      P.gpsNote[w]='📍 por ubicación';
-      if(w==='ent' && !P.salTouched) P.gpsNote.sal='📍 por ubicación';
-      if(w==='sal') P.salGps=true;
-      setPlace(w,b.l.id,false);
-    } else {
-      P.gpsNote[w] = b ? '📍 la más cercana es '+b.l.localidad+' ('+Math.round(b.d)+' km): elegila a mano' : '';
-      render();
-    }
-  }, err=>{
-    P.gpsNote[w] = manual ? '📍 no se pudo obtener la ubicación' : '';
-    render();
-  }, {enableHighAccuracy:false, timeout:12000, maximumAge:300000});
+    if(b && b.d<=GPS_MAX_KM && !P.ent){ setPlace('ent',b.l.id,false); }
+  }, ()=>{}, {enableHighAccuracy:false, timeout:12000, maximumAge:300000});
 }
-$('gpsEnt').addEventListener('click', ()=>locate('ent',true));
-$('gpsSal').addEventListener('click', ()=>locate('sal',true));
 
 /* ---------- pestañas ---------- */
 document.querySelectorAll('nav button').forEach(b=>b.addEventListener('click',()=>{
@@ -442,9 +432,8 @@ function renderLocs(){
     '<div class="dep">'+esc(d)+'</div>'+by[d].sort((a,b)=>cmp(a.localidad,b.localidad)).map(l=>
       '<div class="loc" data-id="'+esc(l.id)+'"><span class="nm">'+esc(l.localidad)+(coordsOf(l)?'':' <span class="note">· sin ubicación</span>')+'</span><span class="hh">'+esc(l.horas)+'</span><span style="color:var(--muted)">›</span></div>').join('')
   ).join('') || '<p class="note" style="padding:8px">Sin resultados.</p>';
-  $('locsNote').textContent = online
-    ? locs.length+' localidades · lista compartida: lo que cambies lo ven todos.'
-    : locs.length+' localidades · '+(apiUrl?'sin conexión (mostrando la última copia).':'modo local: los cambios quedan en este dispositivo.');
+  $('locsNote').innerHTML = esc(locs.length+' localidades · '+(online?'lista compartida: lo que cambies lo ven todos. ':'sin conexión, mostrando la última copia. '))
+    + '<a href="'+SHEET_URL+'" target="_blank" rel="noopener">Abrir la planilla</a>';
   syncSelects(); render();
 }
 $('locSearch').addEventListener('input', renderLocs);
@@ -452,22 +441,21 @@ $('locList').addEventListener('click', e=>{ const it=e.target.closest('.loc'); i
 $('fabAdd').addEventListener('click', ()=>openDlg(null));
 
 let editing=null, dCoords=null;
-function showCoords(){ $('dCoords').textContent = dCoords ? dCoords[0].toFixed(4)+', '+dCoords[1].toFixed(4) : 'Sin ubicación'; }
 function openDlg(l){
   editing=l; $('dErr').textContent='';
   $('dlgTitle').textContent = l?'Editar localidad':'Nueva localidad';
   const dd=l?l.departamento:(byId(P.ent)?.departamento||'');
   $('dDepSel').innerHTML='<option value="">Elegí…</option>'+deps().map(d=>'<option'+(d===dd?' selected':'')+'>'+esc(d)+'</option>').join('')+'<option value="__new">＋ Nuevo departamento…</option>';
   $('dDep').value=''; $('dDep').classList.add('hide'); $('dLoc').value=l?l.localidad:''; $('dHrs').value=l?l.horas:'';
-  dCoords = l ? coordsOf(l) : null; showCoords();
+  dCoords = l ? coordsOf(l) : null; $('dHere').checked=false;
   $('dDel').classList.toggle('hide',!l);
   $('dlg').showModal();
 }
-$('dGps').addEventListener('click', ()=>{
-  if(!navigator.geolocation){ $('dErr').textContent='Sin ubicación disponible'; return; }
-  $('dCoords').textContent='Buscando…';
-  navigator.geolocation.getCurrentPosition(p=>{ dCoords=[+p.coords.latitude.toFixed(5),+p.coords.longitude.toFixed(5)]; showCoords(); },
-    ()=>{ showCoords(); $('dErr').textContent='No se pudo obtener la ubicación'; }, {timeout:12000});
+$('dHere').addEventListener('change', e=>{
+  if(!e.target.checked) return;
+  if(!navigator.geolocation){ e.target.checked=false; $('dErr').textContent='Este navegador no da la ubicación'; return; }
+  navigator.geolocation.getCurrentPosition(p=>{ dCoords=[+p.coords.latitude.toFixed(5),+p.coords.longitude.toFixed(5)]; },
+    ()=>{ e.target.checked=false; $('dErr').textContent='No se pudo obtener la ubicación'; }, {timeout:12000});
 });
 $('dCancel').addEventListener('click', ()=>$('dlg').close());
 $('dDepSel').addEventListener('change', e=>{ const n=e.target.value==='__new'; $('dDep').classList.toggle('hide',!n); if(n) $('dDep').focus(); });
@@ -489,14 +477,8 @@ $('dDel').addEventListener('click', async ()=>{
 async function saveLoc(action,item){
   $('dSave').disabled=true;
   try{
-    if(apiUrl){
-      locs=await api({action,item}); online=true; LS.set('hs_locs_cache',locs); setSync('on','Base compartida · '+locs.length+' localidades');
-    } else {
-      if(action==='delete') locs=locs.filter(l=>l.id!==item.id);
-      else if(item.id) locs=locs.map(l=>l.id===item.id?item:l);
-      else { item.id='l'+Date.now(); locs.push(item); }
-      LS.set('hs_locs_cache',locs);
-    }
+    if(!apiUrl) throw new Error('falta conectar el script de la planilla (Ajustes). Mientras tanto podés editar en la planilla.');
+    locs=await api({action,item}); online=true; LS.set('hs_locs2',locs); setSync('on','Planilla compartida · '+locs.length+' localidades');
     $('dlg').close(); renderLocs(); toast(action==='delete'?'Localidad eliminada':'Localidad guardada');
   }catch(err){ $('dErr').textContent='No se pudo guardar: '+err.message; }
   finally{ $('dSave').disabled=false; }
@@ -514,14 +496,45 @@ async function api(body){
     return j.items;
   } finally { clearTimeout(t); }
 }
-async function loadLocs(){
-  if(!apiUrl){ online=false; setSync('off','Modo local · '+locs.length+' localidades'); renderLocs(); return; }
-  setSync('','Conectando con la base compartida…');
+function parseCSV(t){
+  const rows=[]; let row=[], f='', q=false;
+  for(let i=0;i<t.length;i++){
+    const c=t[i];
+    if(q){ if(c==='"'){ if(t[i+1]==='"'){ f+='"'; i++; } else q=false; } else f+=c; }
+    else if(c==='"') q=true;
+    else if(c===','){ row.push(f); f=''; }
+    else if(c==='\n'){ row.push(f); rows.push(row); row=[]; f=''; }
+    else if(c!=='\r') f+=c;
+  }
+  if(f||row.length){ row.push(f); rows.push(row); }
+  return rows;
+}
+// Lee la hoja pública directamente (no necesita el script)
+async function loadFromSheet(){
+  const url='https://docs.google.com/spreadsheets/d/'+SHEET_ID+'/gviz/tq?tqx=out:csv&headers=0&range=A3:E300&sheet='+encodeURIComponent(SHEET_TAB)+'&t='+Date.now();
+  const ctl=new AbortController(); const t=setTimeout(()=>ctl.abort(),15000);
   try{
-    const items=await api(null);
-    if(items.length){ locs=items; LS.set('hs_locs_cache',locs); }
-    online=true; setSync('on','Base compartida · '+locs.length+' localidades');
-  }catch(e){ online=false; setSync('off','Sin conexión · última copia'); }
+    const res=await fetch(url,{signal:ctl.signal}); if(!res.ok) throw new Error('HTTP '+res.status);
+    const out=[]; let dep='';
+    for(const r of parseCSV(await res.text())){
+      const a=(r[0]||'').trim(), b=(r[1]||'').trim();
+      if(!a && !b){ dep=''; continue; }
+      if(a) dep=a;
+      const m=/(\d{1,2}):(\d{2})/.exec(r[2]||'');
+      if(!b || !m || !dep) continue;
+      const lat=parseFloat(String(r[3]||'').replace(',','.')), lng=parseFloat(String(r[4]||'').replace(',','.'));
+      out.push({id:norm(b), departamento:dep, localidad:b, horas:m[1].padStart(2,'0')+':'+m[2], lat:isFinite(lat)?lat:'', lng:isFinite(lng)?lng:''});
+    }
+    if(!out.length) throw new Error('vacía');
+    return out;
+  } finally { clearTimeout(t); }
+}
+async function loadLocs(){
+  setSync('','Leyendo la planilla…');
+  let items=null;
+  try{ items=await loadFromSheet(); }catch(e){ if(apiUrl){ try{ items=await api(null); }catch(e2){} } }
+  if(items && items.length){ locs=items; LS.set('hs_locs2',locs); online=true; setSync('on','Planilla compartida · '+locs.length+' localidades'); }
+  else { online=false; setSync('off','Sin conexión · '+locs.length+' localidades (última copia)'); }
   renderLocs();
 }
 
@@ -531,7 +544,7 @@ function loadCfg(){
   for(const t in REQ_DEFAULT) $('req'+t).value=req[t];
   $('autoGps').checked=LS.get('hs_autogps',true);
   $('apiUrl').value=apiUrl;
-  $('apiHint').textContent = apiUrl? '' : 'Sin URL, la lista queda solo en este dispositivo.';
+  $('apiHint').textContent = apiUrl? '' : 'Sin esta URL la lista se lee de la planilla, pero se edita solo desde la planilla.';
   document.querySelectorAll('#tipoSeg button').forEach(b=>{ b.querySelector('small').textContent=({C100:'corto',C200_1:'1 día',C200_2:'2 días'})[b.dataset.t]+' · '+dur(toMin(req[b.dataset.t])); });
 }
 $('waNum').addEventListener('input', ()=>{ if($('waRemember').checked) LS.set('hs_wa',$('waNum').value.replace(/\D/g,'')); render(); });
@@ -549,7 +562,7 @@ $('btnReload').addEventListener('click', loadLocs);
 
 /* ---------- inicio ---------- */
 loadCfg(); renderLocs();
-loadLocs().then(()=>{ if(LS.get('hs_autogps',true)) locate('ent',false); });
+loadLocs().then(()=>{ if(LS.get('hs_autogps',true)) locate(); });
 </script>
 </body>
 </html>
