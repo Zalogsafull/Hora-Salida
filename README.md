@@ -15,7 +15,7 @@ App para calcular la marca de salida de los viáticos C100 / C200 y enviar el re
 ## Mis viáticos (opcional, con Google)
 - Para calcular no hace falta cuenta. Para registrar los viáticos del mes: pestaña **Viáticos → Iniciar sesión con Google**.
 - Todo se guarda en la carpeta **Hora Salida** del Google Drive de cada persona (permiso `drive.file`: la app solo ve los archivos que ella crea).
-- Cada viático: tipo (C100/C200), localidad, fecha y hora de comienzo y finalización, locomoción $ (en C200 queda en 0), marcas de la intranet (PDF o captura, recortadas en la app) y comprobantes (foto o PDF).
+- Cada viático: tipo (C100/C200), localidad, fecha y hora de comienzo y finalización, locomoción y alojamiento (se tildan; cada uno con monto y comprobantes; el alojamiento solo cuenta en C100), marcas de la intranet (PDF o captura, recortadas en la app) y comprobantes (foto o PDF).
 - Desde la calculadora, "Guardar en Mis viáticos" lo carga ya completo; si hay un viático sin terminar del mismo tipo, lo completa.
 - **PDF del mes:** por cada tipo, planilla + hojas de marcas (con Salida/Llegada) + comprobantes. Con C100 y C200 en el mes salen dos PDF: solo C100, y C100 + C200.
 - Usa el mismo cliente OAuth de Google que Mis gastos (mismo origen `zalogsafull.github.io`).

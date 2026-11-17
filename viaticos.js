@@ -27,6 +27,15 @@ const conectado = () => LS.get(K.con,'')==='1';
 const tokenOk = () => !!R.token && Date.now() < R.exp-60000;
 const corto = n => String(n||'').replace(/\s*C\.?\s*T\.?\s*$/i,'').trim();
 const enWeb = () => location.protocol==='https:' || location.hostname==='localhost' || location.hostname==='127.0.0.1';
+// locomoción: cuenta en C100 y C200 · alojamiento: solo en C100 (en C200 queda guardado pero no va al PDF)
+const claseDe = a => a.clase==='comp' ? 'loco' : a.clase;
+const tieneLoco = v => v.tLoco!=null ? !!v.tLoco : (+v.loco>0 || (v.adj||[]).some(a=>a.clase==='comp'));
+const alojCuenta = v => v.tipo==='C100' && !!v.tAloj;
+const montoLoco = v => tieneLoco(v) ? (+v.loco||0) : 0;
+const montoAloj = v => alojCuenta(v) ? (+v.aloj||0) : 0;
+const compsPDF = v => (v.adj||[]).filter(a => (claseDe(a)==='loco' && tieneLoco(v)) || (a.clase==='aloj' && alojCuenta(v)))
+  .sort((a,b)=>(claseDe(a)==='loco'?0:1)-(claseDe(b)==='loco'?0:1));
+const pesos = n => '$'+(+n).toLocaleString('es-UY');
 function guardarLocal(){ LS.set(K.datos, R.datos); }
 function viaticos(){ return Object.values(R.datos.v||{}); }
 function delMes(m){ return viaticos().filter(v=>(v.fIni||'').slice(0,7)===m).sort((a,b)=>(a.fIni+a.hIni).localeCompare(b.fIni+b.hIni)); }
@@ -176,12 +185,13 @@ function pintar(){
   const lista=delMes(R.mes);
   const grupo=t=>{
     const l=lista.filter(v=>v.tipo===t); if(!l.length) return '';
-    const loco=l.reduce((s,v)=>s+(+v.loco||0),0);
-    return '<div class="vgrp"><span>'+t+' · '+l.length+'</span>'+(loco?'<span>Locomoción $'+loco.toLocaleString('es-UY')+'</span>':'')+'</div>'+l.map(v=>{
-      const nm=(v.adj||[]).filter(a=>a.clase==='marca').length, nc=(v.adj||[]).filter(a=>a.clase==='comp').length;
+    const loco=l.reduce((s,v)=>s+montoLoco(v),0), aloj=l.reduce((s,v)=>s+montoAloj(v),0);
+    const tot=[loco?'Locom. '+pesos(loco):'', aloj?'Aloj. '+pesos(aloj):''].filter(Boolean).join(' · ');
+    return '<div class="vgrp"><span>'+t+' · '+l.length+'</span>'+(tot?'<span>'+tot+'</span>':'')+'</div>'+l.map(v=>{
+      const nm=(v.adj||[]).filter(a=>a.clase==='marca').length, nc=compsPDF(v).length;
       const fin = v.fFin&&v.hFin ? fDM(v.fFin)+' '+v.hFin : '<span class="open">sin terminar</span>';
       return '<div class="vit" data-id="'+esc(v.id)+'"><div class="t1">'+esc(v.localidad||'—')+'</div><div class="t2">'+fDM(v.fIni)+' '+esc(v.hIni||'--:--')+' → '+fin+
-        (nm||nc?' · '+(nm?'🕒'+nm+' ':'')+(nc?'🧾'+nc:''):'')+(+v.loco?' · $'+(+v.loco).toLocaleString('es-UY'):'')+'</div></div>';
+        (nm||nc?' · '+(nm?'🕒'+nm+' ':'')+(nc?'🧾'+nc:''):'')+(montoLoco(v)?' · 🚌'+pesos(montoLoco(v)):'')+(montoAloj(v)?' · 🛏'+pesos(montoAloj(v)):'')+'</div></div>';
     }).join('');
   };
   $('regLista').innerHTML = grupo('C100')+grupo('C200') || '<p class="note" style="padding:6px 2px">No hay viáticos en '+mesNombre(R.mes)+'.</p>';
@@ -194,13 +204,14 @@ function opcionesLoc(sel, id){
 }
 function pintarTipo(){
   document.querySelectorAll('#vTipo button').forEach(b=>b.classList.toggle('on',b.dataset.t===R.ed.tipo));
-  $('vLocoHint').textContent = R.ed.tipo==='C200' ? 'En C200 la locomoción no se paga: queda en 0 (el pasaje igual va como comprobante).' : 'Importe de pasajes o boletos a cobrar.';
+  $('vAlojC200').classList.toggle('hide', R.ed.tipo!=='C200');
 }
 function pintarAdj(){
   const item=a=>'<div class="adj" data-a="'+esc(a.id)+'"><div class="th" id="th_'+esc(a.id)+'">'+(a.mime==='application/pdf'?'PDF':'…')+'</div><div class="nm">'+esc(a.nombre||'')+'</div><button type="button" class="x" data-x="'+esc(a.id)+'" aria-label="Quitar">×</button></div>';
   const adj=R.ed.adj||[];
   $('vMarcas').innerHTML = adj.filter(a=>a.clase==='marca').map(item).join('') || '<span class="note">Subí el PDF de la página de marcas y recortalo.</span>';
-  $('vComps').innerHTML = adj.filter(a=>a.clase==='comp').map(item).join('') || '<span class="note">Sin comprobantes.</span>';
+  $('vLocoAdj').innerHTML = adj.filter(a=>claseDe(a)==='loco').map(item).join('') || '<span class="note">Sin comprobantes.</span>';
+  $('vAlojAdj').innerHTML = adj.filter(a=>a.clase==='aloj').map(item).join('') || '<span class="note">Sin comprobantes.</span>';
   adj.forEach(async a=>{
     if(a.mime==='application/pdf') return;
     try{ const b=a._blob || await bajar(a.drive); const el=document.getElementById('th_'+a.id); if(el){ el.style.backgroundImage='url('+URL.createObjectURL(b)+')'; el.textContent=''; } }catch(e){}
@@ -208,12 +219,13 @@ function pintarAdj(){
 }
 function abrirEditor(v){
   const nuevo=!v || !R.datos.v[v.id];
-  R.ed = JSON.parse(JSON.stringify(v || {id:uid(), tipo:'C200', localidad:'', fIni:isoHoy(), hIni:'', fFin:isoHoy(), hFin:'', loco:0, adj:[]}));
+  R.ed = JSON.parse(JSON.stringify(v || {id:uid(), tipo:'C200', localidad:'', fIni:isoHoy(), hIni:'', fFin:isoHoy(), hFin:'', loco:0, aloj:0, tLoco:false, tAloj:false, adj:[]}));
   R.ed._nuevo=nuevo; R.ed._subidos=[]; R.ed._quitados=[];
   $('vTitle').textContent = nuevo ? 'Nuevo viático' : 'Editar viático';
   $('dlLocNames').innerHTML=[...new Set(locs.map(l=>corto(l.localidad)))].sort(cmp).map(n=>'<option value="'+esc(n)+'">').join('');
   $('vLoc').value=R.ed.localidad||''; $('vFIni').value=R.ed.fIni||''; $('vHIni').value=R.ed.hIni||''; $('vFFin').value=R.ed.fFin||''; $('vHFin').value=R.ed.hFin||'';
-  $('vLoco').value = R.ed.loco||0;
+  $('vLoco').value = R.ed.loco||0; $('vAloj').value = R.ed.aloj||0;
+  $('vTLoco').checked = tieneLoco(R.ed); $('vTAloj').checked = !!R.ed.tAloj; checks();
   opcionesLoc($('vCEntLoc'), R.ed.cEntLoc||''); opcionesLoc($('vCSalLoc'), R.ed.cSalLoc||'');
   $('vCEnt').value=R.ed.cEnt||''; $('vCSal').value=R.ed.cSal||'';
   $('vCalc').open = !!(R.ed.cEnt||R.ed.cSal);
@@ -223,7 +235,8 @@ function abrirEditor(v){
 }
 function leerEditor(){
   Object.assign(R.ed,{localidad:$('vLoc').value.trim(), fIni:$('vFIni').value, hIni:$('vHIni').value, fFin:$('vFFin').value, hFin:$('vHFin').value,
-    loco: R.ed.tipo==='C200' ? 0 : Math.max(0, Math.round(+$('vLoco').value||0)),
+    tLoco:$('vTLoco').checked, tAloj:$('vTAloj').checked,
+    loco: Math.max(0, Math.round(+$('vLoco').value||0)), aloj: Math.max(0, Math.round(+$('vAloj').value||0)),
     cEntLoc:$('vCEntLoc').value, cSalLoc:$('vCSalLoc').value, cEnt:$('vCEnt').value, cSal:$('vCSal').value});
 }
 function calcEditor(){
@@ -234,8 +247,10 @@ function calcEditor(){
   $('vCalcHint').textContent = msg.join(' · ') || 'Hora comienzo = marca − viaje · Hora finalización = marca + viaje';
 }
 ['vCEntLoc','vCSalLoc','vCEnt','vCSal'].forEach(id=>$(id).addEventListener('input',calcEditor));
-$('vTipo').addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b) return; R.ed.tipo=b.dataset.t; if(R.ed.tipo==='C200') $('vLoco').value=0; pintarTipo(); });
-$('vMarcas').addEventListener('click',quitarAdj); $('vComps').addEventListener('click',quitarAdj);
+$('vTipo').addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b) return; R.ed.tipo=b.dataset.t; pintarTipo(); });
+function checks(){ $('vLocoBox').classList.toggle('hide',!$('vTLoco').checked); $('vAlojBox').classList.toggle('hide',!$('vTAloj').checked); }
+$('vTLoco').addEventListener('change',checks); $('vTAloj').addEventListener('change',checks);
+['vMarcas','vLocoAdj','vAlojAdj'].forEach(id=>$(id).addEventListener('click',quitarAdj));
 function quitarAdj(e){
   const x=e.target.closest('[data-x]'); if(!x) return;
   const a=R.ed.adj.find(a=>a.id===x.dataset.x); if(!a) return;
@@ -289,17 +304,18 @@ async function agregarAdj(blob, nombre, mime, clase, extra){
   a._blob=blob; R.ed.adj.push(a); R.ed._subidos.push(a); pintarAdj();
   return a;
 }
-$('vCompIn').addEventListener('change', async e=>{
-  const files=[...e.target.files]; e.target.value='';
+async function subirComps(files, clase){
   for(const f of files){
     $('vErr').textContent='Subiendo '+f.name+'…';
     try{
-      if(f.type==='application/pdf') await agregarAdj(f, f.name, 'application/pdf', 'comp');
-      else { const j=await aJpeg(f); await agregarAdj(j, (f.name||'comprobante').replace(/\.[^.]+$/,'')+'.jpg', 'image/jpeg', 'comp'); }
+      if(f.type==='application/pdf') await agregarAdj(f, f.name, 'application/pdf', clase);
+      else { const j=await aJpeg(f); await agregarAdj(j, (f.name||'comprobante').replace(/\.[^.]+$/,'')+'.jpg', 'image/jpeg', clase); }
       $('vErr').textContent='';
     }catch(err){ $('vErr').textContent='No se pudo subir '+f.name+(err&&err.code==='token'?': renová el permiso de Google.':'.'); }
   }
-});
+}
+$('vLocoIn').addEventListener('change', e=>{ const f=[...e.target.files]; e.target.value=''; subirComps(f,'loco'); });
+$('vAlojIn').addEventListener('change', e=>{ const f=[...e.target.files]; e.target.value=''; subirComps(f,'aloj'); });
 $('vMarcaIn').addEventListener('change', async e=>{
   const f=e.target.files[0]; e.target.value=''; if(!f) return;
   try{ await abrirRecorte(f); }catch(err){ $('vErr').textContent='No se pudo abrir el archivo: '+(err.message||err); }
@@ -410,21 +426,21 @@ async function bloque(pdf, tipo, lista, F){
     pg.drawText('NOMBRE',{x:188,y:Y(78),size:9.5,font:F.bi});
     pg.drawText(txt(nombre),{x:250,y:Y(78),size:9,font:F.r});
     pg.drawLine({start:{x:247,y:Y(81)},end:{x:470,y:Y(81)},thickness:.6,color:negro});
-    const cols=[57,173,246,313,393,468,527];
-    const cab=[['a','localidad'],['fecha','comienzo'],['hora','comienzo'],['fecha','Finalizacion'],['hora','Finalizacion'],['locomoc','$']];
+    const cols=[57,158,224,282,354,418,473,527];
+    const cab=[['a','localidad'],['fecha','comienzo'],['hora','comienzo'],['fecha','Finalizacion'],['hora','Finalizacion'],['locomoc','$'],['alojam.','$']];
     const box=(x1,y1,x2,y2,w)=>pg.drawRectangle({x:x1,y:Y(y2),width:x2-x1,height:y2-y1,borderColor:negro,borderWidth:w||.7});
     const centro=(s,x1,x2,y,size,font)=>{ s=txt(s); const w=font.widthOfTextAtSize(s,size); pg.drawText(s,{x:(x1+x2)/2-w/2,y:Y(y),size,font}); };
-    box(cols[0],95,cols[6],128,.9);
-    for(let c=1;c<6;c++) pg.drawLine({start:{x:cols[c],y:Y(95)},end:{x:cols[c],y:Y(128)},thickness:.7,color:negro});
+    box(cols[0],95,cols[7],128,.9);
+    for(let c=1;c<7;c++) pg.drawLine({start:{x:cols[c],y:Y(95)},end:{x:cols[c],y:Y(128)},thickness:.7,color:negro});
     cab.forEach((t,c)=>{ centro(t[0],cols[c],cols[c+1],107,9,F.b); centro(t[1],cols[c],cols[c+1],124,9,F.b); });
     const filas=lista.slice(ini,ini+filasPorHoja), nFilas=Math.max(10, filas.length);
     for(let i=0;i<nFilas;i++){
       const y1=168+i*25.6, y2=y1+14;
-      box(cols[0],y1,cols[6],y2,.7);
-      for(let c=1;c<6;c++) pg.drawLine({start:{x:cols[c],y:Y(y1)},end:{x:cols[c],y:Y(y2)},thickness:.7,color:negro});
+      box(cols[0],y1,cols[7],y2,.7);
+      for(let c=1;c<7;c++) pg.drawLine({start:{x:cols[c],y:Y(y1)},end:{x:cols[c],y:Y(y2)},thickness:.7,color:negro});
       const v=filas[i]; if(!v) continue;
-      const vals=[v.localidad, fDMY(v.fIni), v.hIni, fDMY(v.fFin), v.hFin, String(+v.loco||0)];
-      vals.forEach((s,c)=>centro(s||'',cols[c],cols[c+1],y2-3.5,c===5?7.5:8.5,F.r));
+      const vals=[v.localidad, fDMY(v.fIni), v.hIni, fDMY(v.fFin), v.hFin, String(montoLoco(v)), String(montoAloj(v))];
+      vals.forEach((s,c)=>centro(s||'',cols[c],cols[c+1],y2-3.5,c>=5?7.5:8.5,F.r));
     }
     if(lista.length<=filasPorHoja) break;
   }
@@ -452,7 +468,7 @@ async function bloque(pdf, tipo, lista, F){
   }
   /* --- 3) comprobantes --- */
   for(const v of lista){
-    for(const a of (v.adj||[]).filter(a=>a.clase==='comp')){
+    for(const a of compsPDF(v)){
       let b; try{ b=await bajar(a.drive); }catch(e){ continue; }
       const bytes=new Uint8Array(await b.arrayBuffer());
       const encajar=(w0,h0)=>{ const mw=A4[0]-48, mh=A4[1]-60, k=Math.min(mw/w0, mh/h0, 1.6); return {w:w0*k, h:h0*k}; };
@@ -523,7 +539,7 @@ function desdeCalculadora(){
     return;
   }
   const dosDias = tipo==='C200_2';
-  const v={id:uid(), tipo:t, localidad: r.le?corto(r.le.localidad):'', loco:0, adj:[],
+  const v={id:uid(), tipo:t, localidad: r.le?corto(r.le.localidad):'', loco:0, aloj:0, tLoco:false, tAloj:false, adj:[],
     fIni: dosDias && r.salFic!=null ? isoHoy(-1) : isoHoy(),
     hIni: r.entFic!=null ? hhmm(r.entFic) : '',
     fFin: dosDias && r.salFic==null ? isoHoy(1) : isoHoy(),

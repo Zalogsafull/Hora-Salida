@@ -89,6 +89,8 @@
   .vit{background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:6px;cursor:pointer}
   .vit .t1{font-weight:700}.vit .t2{font-size:13.5px;color:var(--muted);font-variant-numeric:tabular-nums;margin-top:2px}
   .vit .open{color:#b26a00;font-weight:700}
+  .chk{display:flex;gap:10px;align-items:center;font-weight:600;padding:10px 2px;cursor:pointer}
+  .chk input{width:22px;height:22px;min-height:0;margin:0}
   .adjbox{border:1px solid var(--line);border-radius:12px;padding:10px;margin-bottom:10px}
   .adjhead{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px}
   .adjhead .gps{white-space:nowrap}
@@ -304,17 +306,26 @@
       </div>
       <div class="hint" id="vCalcHint">Hora comienzo = marca − viaje · Hora finalización = marca + viaje</div>
     </details>
-    <div class="f"><label for="vLoco">Locomoción $</label><input id="vLoco" type="number" inputmode="decimal" min="0" step="1" value="0">
-      <div class="hint" id="vLocoHint"></div></div>
-
     <div class="adjbox">
       <div class="adjhead"><b>Marcas de la intranet</b><label class="gps">＋ PDF o captura<input id="vMarcaIn" type="file" accept="application/pdf,image/*" hidden></label></div>
       <div id="vMarcas" class="adjlist"></div>
     </div>
-    <div class="adjbox">
-      <div class="adjhead"><b>Comprobantes</b><label class="gps">＋ Agregar<input id="vCompIn" type="file" accept="application/pdf,image/*" multiple hidden></label></div>
-      <div id="vComps" class="adjlist"></div>
-      <div class="hint">Pasajes, boletas o tickets (foto o PDF).</div>
+
+    <label class="chk"><input type="checkbox" id="vTLoco"> Tiene locomoción</label>
+    <div class="adjbox hide" id="vLocoBox">
+      <div class="f"><label for="vLoco">Monto locomoción $</label><input id="vLoco" type="number" inputmode="decimal" min="0" step="1" value="0"></div>
+      <div class="adjhead"><b>Comprobantes</b><label class="gps">＋ Agregar<input id="vLocoIn" type="file" accept="application/pdf,image/*" multiple hidden></label></div>
+      <div id="vLocoAdj" class="adjlist"></div>
+      <div class="hint">Pasajes, boletos (foto o PDF).</div>
+    </div>
+
+    <label class="chk"><input type="checkbox" id="vTAloj"> Tiene alojamiento</label>
+    <div class="adjbox hide" id="vAlojBox">
+      <div class="hint bad hide" id="vAlojC200" style="margin:0 0 8px">En C200 el alojamiento no se cobra: no va en la planilla ni en el PDF (queda guardado por si lo pasás a C100).</div>
+      <div class="f"><label for="vAloj">Monto alojamiento $</label><input id="vAloj" type="number" inputmode="decimal" min="0" step="1" value="0"></div>
+      <div class="adjhead"><b>Comprobantes</b><label class="gps">＋ Agregar<input id="vAlojIn" type="file" accept="application/pdf,image/*" multiple hidden></label></div>
+      <div id="vAlojAdj" class="adjlist"></div>
+      <div class="hint">Factura o boleta del hotel (foto o PDF).</div>
     </div>
     <div class="hint bad" id="vErr"></div>
     <div class="btns" style="margin-top:10px">
