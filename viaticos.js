@@ -814,7 +814,7 @@ async function estadoMarcasMes(){
   if(!m || !m.drive){ el.textContent=''; return; }
   el.textContent='Leyendo las marcas del PDF…';
   try{
-    const pags=await analizarMarcas(m.drive), dias=[...new Set([...pags.flatMap(p=>p.filas.map(f=>f.f)), ...filasDia(pags).map(d=>d.f)])].sort();
+    const pags=await analizarMarcas(m.drive), dias=[...new Set([...pags.flatMap(p=>p.filas.map(f=>f.f)), ...filasDia(pags).map(d=>d.f).filter(f=>f.slice(0,7)===R.mes)])].sort();
     if((R.datos.marcasMes||{})[R.mes]!==m) return;
     el.textContent = dias.length ? dias.length+' día(s) con marcas: '+dias.map(d=>d.slice(8,10)).join(', ') : 'No se encontraron marcas en el PDF. ¿Es la impresión de "Marcas SAP"?';
     if(dias.length) chequearMes();
