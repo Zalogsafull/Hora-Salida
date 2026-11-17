@@ -44,10 +44,25 @@ const compsPDF = v => (v.adj||[]).filter(a => (claseDe(a)==='loco' && tieneLoco(
 const pesos = n => '$'+(+n).toLocaleString('es-UY');
 // marcas intermedias: solo C100 (en C200 quedan guardadas pero no van a la planilla)
 const interCuenta = v => v.tipo==='C100' && !!v.tInter && (v.inter||[]).some(p=>p.h);
+// nombre corto de la localidad de la marca de salida
+function locSalida(v){ const l=v.cSalLoc&&!String(v.cSalLoc).startsWith('otra:')?byId(v.cSalLoc):null; return l?corto(l.localidad):''; }
 function renglones(v){
-  const base=[v.localidad, fDMY(v.fIni), v.hIni, fDMY(v.fFin), v.hFin];
-  if(!interCuenta(v)) return [[...base, String(montoLoco(v)), String(montoAloj(v))]];
-  return renglonesInter(v);
+  if(interCuenta(v)) return renglonesInter(v);
+  const ini={loc:v.localidad,f:v.fIni,h:v.hIni}, fin={f:v.fFin,h:v.hFin};
+  // C100 con la marca de salida en otra localidad: dos renglones partidos en la marca de entrada
+  //   1) localidad de entrada: hora de comienzo → marca de entrada
+  //   2) localidad de salida: marca de entrada (repetida) → hora de finalización
+  const ls=locSalida(v);
+  if(v.tipo==='C100' && v.cEnt && ls && norm(ls)!==norm(v.localidad||''))
+    return formatear(v, [[ini,{f:v.fIni,h:v.cEnt}], [{loc:ls,f:v.fIni,h:v.cEnt}, fin]]);
+  return formatear(v, [[ini,fin]]);
+}
+function formatear(v, pares){
+  const alo=alojEnRenglones(v,pares);
+  return pares.map(([a,b],k)=>{
+    const lc = pares.length===1 ? montoLoco(v) : k===0 ? sumaLoco(v,'ida') : (k===pares.length-1 ? sumaLoco(v,'vuelta') : 0);
+    return [a.loc, fDMY(a.f), a.h, fDMY(b.f), b.h, String(lc), String(alo[k])];
+  });
 }
 function alojEnRenglones(v, pares){
   const n=pares.length, out=new Array(n).fill(0);
@@ -76,12 +91,7 @@ function renglonesInter(v){
     const c=nodos[i+2];
     i = (c && restanDia(i+2)>=2 && (mismo(b,c) || mismo(a,b))) ? i+2 : i+1;
   }
-  const alo=alojEnRenglones(v,pares);
-  const out=pares.map(([a,b],k)=>{
-    const lc = pares.length===1 ? montoLoco(v) : k===0 ? sumaLoco(v,'ida') : (k===pares.length-1 ? sumaLoco(v,'vuelta') : 0);
-    return [a.loc, fDMY(a.f), a.h, fDMY(b.f), b.h, String(lc), String(alo[k])];
-  });
-  return out;
+  return formatear(v, pares);
 }
 function guardarLocal(){ LS.set(K.datos, R.datos); }
 function viaticos(){ return Object.values(R.datos.v||{}); }
