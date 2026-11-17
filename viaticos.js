@@ -237,6 +237,40 @@ function pintarEstado(){
   const u=LS.get('hs_gd_ultima',0);
   $('regEstado').textContent = R.sync ? 'Sincronizando…' : R.necesitaToque ? 'Tocá Sincronizar para renovar el permiso' : R.err ? R.err : R.pend ? 'Cambios sin subir…' : (u ? 'Guardado en Drive' : '');
 }
+/* ---------------- control de reglas ---------------- */
+function horasCumplidas(v){
+  const a=toMin(v.hIni), b=toMin(v.hFin); if(a==null||b==null) return null;
+  let t=b-a; if(t<0) t+=1440; return t; // en varios días: horas del día de la vuelta desde la hora de comienzo
+}
+function horasRequeridas(v){ return toMin(v.tipo==='C100' ? req.C100 : (v.fFin && v.fFin!==v.fIni ? req.C200_2 : req.C200_1)); }
+function problemas(v, todos){
+  const p=[];
+  if(!v.localidad) p.push('Falta la localidad');
+  if(!v.hIni) p.push('Falta la marca de entrada');
+  if(!v.fFin || !v.hFin) p.push('Sin terminar: falta la marca de salida');
+  if(v.fFin && v.fFin<v.fIni) p.push('La finalización es anterior al comienzo');
+  const t=horasCumplidas(v), need=horasRequeridas(v);
+  if(t!=null && v.fFin && need!=null && t<need) p.push('Horas: '+dur(t)+' de '+dur(need)+' (faltan '+dur(need-t)+')');
+  if(v.tipo==='C100' && v.tInter && (v.inter||[]).some(x=>!x.h)) p.push('Marca intermedia sin hora');
+  const sinComp = it => !(v.adj||[]).some(a=>a.item===it.id);
+  if(tieneLoco(v)){
+    const ls=locosDe(v);
+    if(!ls.length) p.push('Locomoción tildada sin cargar');
+    if(ls.some(l=>!(+l.monto>0))) p.push('Locomoción sin monto');
+    if(Array.isArray(v.locos) && ls.some(sinComp)) p.push('Locomoción sin comprobante');
+  }
+  if(alojCuenta(v)){
+    const al=alojsDe(v);
+    if(!al.length) p.push('Alojamiento tildado sin cargar');
+    if(al.some(a=>!(+a.monto>0))) p.push('Alojamiento sin monto');
+    if(Array.isArray(v.alojs) && al.some(sinComp)) p.push('Alojamiento sin comprobante');
+  }
+  const fin=v.fFin||v.fIni;
+  const choca=(todos||[]).find(o=>o.id!==v.id && o.fIni && o.fIni<=fin && (o.fFin||o.fIni)>=v.fIni);
+  if(choca) p.push('Se superpone con '+(choca.localidad||'otro viático')+' del '+fDM(choca.fIni));
+  return p;
+}
+
 function pintar(){
   const on=conectado();
   $('regOff').classList.toggle('hide',on); $('regOn').classList.toggle('hide',!on);
@@ -244,7 +278,9 @@ function pintar(){
   pintarEstado();
   if(document.activeElement!==$('regNombre')) $('regNombre').value=R.datos.nombre||'';
   $('mesTxt').textContent=mesNombre(R.mes);
-  const lista=delMes(R.mes);
+  const lista=delMes(R.mes), todos=viaticos();
+  const probs={}; lista.forEach(v=>probs[v.id]=problemas(v,todos));
+  const mal=lista.filter(v=>probs[v.id].length).length;
   const grupo=t=>{
     const l=lista.filter(v=>v.tipo===t); if(!l.length) return '';
     const loco=l.reduce((s,v)=>s+montoLoco(v),0), aloj=l.reduce((s,v)=>s+montoAloj(v),0);
@@ -252,12 +288,15 @@ function pintar(){
     return '<div class="vgrp"><span>'+t+' · '+l.length+'</span>'+(tot?'<span>'+tot+'</span>':'')+'</div>'+l.map(v=>{
       const nm=0, nc=compsPDF(v).length;
       const fin = v.fFin&&v.hFin ? fDM(v.fFin)+' '+v.hFin : '<span class="open">sin terminar</span>';
-      return '<div class="vit" data-id="'+esc(v.id)+'"><div class="t1">'+esc(v.localidad||'—')+'</div><div class="t2">'+fDM(v.fIni)+' '+esc(v.hIni||'--:--')+' → '+fin+
-        (nm||nc?' · '+(nm?'🕒'+nm+' ':'')+(nc?'🧾'+nc:''):'')+(interCuenta(v)?' · +'+(v.inter||[]).filter(p=>p.h).length+' marcas':'')+(montoLoco(v)?' · 🚌'+pesos(montoLoco(v)):'')+(montoAloj(v)?' · 🛏'+pesos(montoAloj(v)):'')+'</div></div>';
+      const pr=probs[v.id];
+      return '<div class="vit'+(pr.length?' rev':'')+'" data-id="'+esc(v.id)+'"><div class="t1">'+(pr.length?'<span class="est mal">!</span>':'<span class="est ok">✓</span>')+esc(v.localidad||'—')+'</div><div class="t2">'+fDM(v.fIni)+' '+esc(v.hIni||'--:--')+' → '+fin+
+        (nm||nc?' · '+(nm?'🕒'+nm+' ':'')+(nc?'🧾'+nc:''):'')+(interCuenta(v)?' · +'+(v.inter||[]).filter(p=>p.h).length+' marcas':'')+(montoLoco(v)?' · 🚌'+pesos(montoLoco(v)):'')+(montoAloj(v)?' · 🛏'+pesos(montoAloj(v)):'')+'</div>'+
+        (pr.length?'<ul class="probs">'+pr.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul>':'')+'</div>';
     }).join('');
   };
   pintarMarcasMes();
-  $('regLista').innerHTML = grupo('C100')+grupo('C200') || '<p class="note" style="padding:6px 2px">No hay viáticos en '+mesNombre(R.mes)+'.</p>';
+  const resumen = lista.length ? '<div class="resumen '+(mal?'mal':'ok')+'">'+(mal ? '⚠️ '+mal+' de '+lista.length+' viático(s) para revisar' : '✓ Los '+lista.length+' viáticos del mes están completos')+'</div>' : '';
+  $('regLista').innerHTML = (resumen+grupo('C100')+grupo('C200')) || '<p class="note" style="padding:6px 2px">No hay viáticos en '+mesNombre(R.mes)+'.</p>';
 }
 
 /* ---------------- editor ---------------- */
@@ -335,6 +374,9 @@ function abrirEditor(v){
   R.ed._legIni = R.ed.cEnt ? '' : (R.ed.hIni||''); R.ed._legFin = R.ed.cSal ? '' : (R.ed.hFin||'');
   calcEditor();
   $('vErr').textContent=''; $('vDel').classList.toggle('hide',nuevo);
+  const pr = nuevo ? [] : problemas(R.datos.v[R.ed.id], viaticos());
+  $('vRevisar').innerHTML = pr.length ? '<b>Para revisar:</b><ul class="probs">'+pr.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul>' : '';
+  $('vRevisar').classList.toggle('hide',!pr.length);
   pintarTipo(); pintarAdj();
   $('dlgV').showModal();
 }
@@ -622,7 +664,7 @@ async function generarPDF(){
   try{
     const lista=delMes(R.mes), c100=lista.filter(v=>v.tipo==='C100'), c200=lista.filter(v=>v.tipo==='C200');
     if(!lista.length){ out.innerHTML='<p class="note">No hay viáticos en '+mesNombre(R.mes)+'.</p>'; return; }
-    const sinTerminar=lista.filter(v=>!v.fFin||!v.hFin).length;
+    const sinTerminar=lista.filter(v=>problemas(v,viaticos()).length).length;
     if(lista.some(v=>(v.adj||[]).length)) await asegurarToken().catch(()=>{});
     const mm=R.mes.slice(5,7)+'-'+R.mes.slice(2,4), res=[];
     if(c100.length){
@@ -635,7 +677,7 @@ async function generarPDF(){
       await bloque(pdf,'C200',c200,F);
       res.push({nombre:'Planilla_VIÁTICOS_'+mm+'.pdf', bytes:await pdf.save(), desc: c100.length?'C100 + C200':'C200'});
     }
-    out.innerHTML='<div class="pdfout">'+(sinTerminar?'<p class="hint bad" style="margin:0">Ojo: '+sinTerminar+' viático(s) sin fecha u hora de finalización.</p>':'')+res.map((r,i)=>{
+    out.innerHTML='<div class="pdfout">'+(sinTerminar?'<p class="hint bad" style="margin:0">Ojo: '+sinTerminar+' viático(s) marcados para revisar en la lista.</p>':'')+res.map((r,i)=>{
       const url=URL.createObjectURL(new Blob([r.bytes],{type:'application/pdf'}));
       return '<div><div class="note" style="margin-bottom:4px"><b>'+esc(r.desc)+'</b> · '+esc(r.nombre)+'</div><div class="row">'+
         '<button class="btn pri" type="button" data-ver="'+i+'">Ver</button>'+
