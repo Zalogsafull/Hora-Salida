@@ -93,6 +93,10 @@
   .irow .x{border:0;background:transparent;color:var(--bad);font-size:22px;cursor:pointer}
   .vit .t1{font-weight:700}.vit .t2{font-size:13.5px;color:var(--muted);font-variant-numeric:tabular-nums;margin-top:2px}
   .vit .open{color:#b26a00;font-weight:700}
+  .sub2{font-size:12px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:4px 0 6px}
+  .calcres{display:grid;grid-template-columns:1fr 1fr;gap:8px;background:var(--soft);border-radius:12px;padding:10px 12px;margin-bottom:10px}
+  .calcres span{display:block;font-size:12.5px;color:var(--muted);font-weight:600}
+  .calcres b{font-size:24px;font-variant-numeric:tabular-nums}
   .chk{display:flex;gap:10px;align-items:center;font-weight:600;padding:10px 2px;cursor:pointer}
   .chk input{width:22px;height:22px;min-height:0;margin:0}
   .adjbox{border:1px solid var(--line);border-radius:12px;padding:10px;margin-bottom:10px}
@@ -292,28 +296,27 @@
       <button type="button" data-t="C100">C100<small>1 o más días</small></button>
       <button type="button" data-t="C200">C200<small>1 o más días</small></button>
     </div>
+    <div class="sub2">Entrada</div>
     <div class="g2 f">
       <div><label for="vLocDep">Departamento</label><select id="vLocDep"></select></div>
       <div><label for="vLocSel">Localidad</label><select id="vLocSel"></select></div>
     </div>
     <div class="g2 f">
       <div><label for="vFIni">Fecha comienzo</label><input id="vFIni" type="date" required></div>
-      <div><label for="vHIni">Hora comienzo</label><input id="vHIni" type="time"></div>
+      <div><label for="vCEnt">Marca de entrada</label><input id="vCEnt" type="time"></div>
     </div>
+    <div class="sub2">Salida</div>
+    <div class="f"><label for="vCSalLoc">Ciudad de la marca de salida</label><select id="vCSalLoc"></select></div>
     <div class="g2 f">
       <div><label for="vFFin">Fecha finalización</label><input id="vFFin" type="date"></div>
-      <div><label for="vHFin">Hora finalización</label><input id="vHFin" type="time"></div>
+      <div><label for="vCSal">Marca de salida</label><input id="vCSal" type="time"></div>
     </div>
-    <details id="vCalc" class="f">
-      <summary>Calcular las horas con las marcas</summary>
-      <div class="g2" style="margin-top:8px">
-        <div><label for="vCEntLoc">Ciudad entrada</label><select id="vCEntLoc"></select></div>
-        <div><label for="vCEnt">Marca de entrada</label><input id="vCEnt" type="time"></div>
-        <div><label for="vCSalLoc">Ciudad salida</label><select id="vCSalLoc"></select></div>
-        <div><label for="vCSal">Marca de salida</label><input id="vCSal" type="time"></div>
-      </div>
-      <div class="hint" id="vCalcHint">Hora comienzo = marca − viaje · Hora finalización = marca + viaje</div>
-    </details>
+    <input type="hidden" id="vHIni"><input type="hidden" id="vHFin">
+    <div class="calcres">
+      <div><span>Hora comienzo</span><b id="vHIniTxt">--:--</b></div>
+      <div><span>Hora finalización</span><b id="vHFinTxt">--:--</b></div>
+    </div>
+    <div class="hint" id="vCalcHint" style="margin:-4px 0 10px"></div>
     <label class="chk" id="vInterChk"><input type="checkbox" id="vTInter"> Tiene marcas intermedias</label>
     <div class="adjbox hide" id="vInterBox">
       <div class="hint" style="margin:0 0 8px">Cada marca intermedia agrega un renglón en la planilla: comienzo → 1ª marca, 1ª → 2ª … última → finalización.</div>

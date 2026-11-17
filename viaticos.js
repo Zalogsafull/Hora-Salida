@@ -269,9 +269,11 @@ function abrirEditor(v){
   $('vLoco').value = R.ed.loco||0; $('vAloj').value = R.ed.aloj||0;
   R.ed.inter=R.ed.inter||[]; $('vTInter').checked=!!R.ed.tInter; $('vInter').innerHTML='';
   $('vTLoco').checked = tieneLoco(R.ed); $('vTAloj').checked = !!R.ed.tAloj; checks();
-  opcionesLoc($('vCEntLoc'), R.ed.cEntLoc||''); opcionesLoc($('vCSalLoc'), R.ed.cSalLoc||'');
-  $('vCEnt').value=R.ed.cEnt||''; $('vCSal').value=R.ed.cSal||'';
-  $('vCalc').open = !!(R.ed.cEnt||R.ed.cSal);
+  opcionesLoc($('vCSalLoc'), R.ed.cSalLoc || ($('vLocSel').value.startsWith('otra:')?'':$('vLocSel').value));
+  $('vCEnt').value=R.ed.cEnt||''; $('vCSal').value=R.ed.cSal||''; _entAnt=$('vLocSel').value;
+  // horas cargadas antes sin marca: se conservan hasta que se cargue la marca
+  R.ed._legIni = R.ed.cEnt ? '' : (R.ed.hIni||''); R.ed._legFin = R.ed.cSal ? '' : (R.ed.hFin||'');
+  calcEditor();
   $('vErr').textContent=''; $('vDel').classList.toggle('hide',nuevo);
   pintarTipo(); pintarAdj();
   $('dlgV').showModal();
@@ -292,22 +294,32 @@ function ponerLocalidad(nombre){
     $('vLocSel').innerHTML='<option value="otra:'+esc(nombre)+'" selected>'+esc(nombre)+'</option>'; $('vLocSel').disabled=false;
   }
 }
-$('vLocDep').addEventListener('change',e=>pintarLocSel(e.target.value,''));
+$('vLocDep').addEventListener('change',e=>{ pintarLocSel(e.target.value,''); seguirSalida(); calcEditor(); });
+let _entAnt='';
+function seguirSalida(){ const v=$('vLocSel').value; if(!$('vCSalLoc').value || $('vCSalLoc').value===_entAnt) opcionesLoc($('vCSalLoc'), v&&!v.startsWith('otra:')?v:''); _entAnt=v; calcEditor(); }
+$('vLocSel').addEventListener('focus',()=>{ _entAnt=$('vLocSel').value; });
+$('vLocSel').addEventListener('change',seguirSalida);
 function leerEditor(){
   Object.assign(R.ed,{localidad:locDeSel(), fIni:$('vFIni').value, hIni:$('vHIni').value, fFin:$('vFFin').value, hFin:$('vHFin').value,
     tInter:$('vTInter').checked, inter:(leerInter(), R.ed.inter.filter(p=>p.h||p.loc)),
     tLoco:$('vTLoco').checked, tAloj:$('vTAloj').checked,
     loco: Math.max(0, Math.round(+$('vLoco').value||0)), aloj: Math.max(0, Math.round(+$('vAloj').value||0)),
-    cEntLoc:$('vCEntLoc').value, cSalLoc:$('vCSalLoc').value, cEnt:$('vCEnt').value, cSal:$('vCSal').value});
+    cEntLoc:$('vLocSel').value, cSalLoc:$('vCSalLoc').value, cEnt:$('vCEnt').value, cSal:$('vCSal').value});
 }
 function calcEditor(){
-  const le=byId($('vCEntLoc').value), ls=byId($('vCSalLoc').value), me=toMin($('vCEnt').value), ms=toMin($('vCSal').value);
-  const msg=[];
-  if(le && me!=null){ $('vHIni').value=hhmm(me-toMin(le.horas)); msg.push('Comienzo '+$('vHIni').value+' ('+$('vCEnt').value+' − '+dur(toMin(le.horas))+')'); if(!locDeSel()) ponerLocalidad(corto(le.localidad)); }
-  if(ls && ms!=null){ $('vHFin').value=hhmm(ms+toMin(ls.horas)); msg.push('Finalización '+$('vHFin').value+' ('+$('vCSal').value+' + '+dur(toMin(ls.horas))+')'); }
-  $('vCalcHint').textContent = msg.join(' · ') || 'Hora comienzo = marca − viaje · Hora finalización = marca + viaje';
+  const v=$('vLocSel').value, le=v&&!v.startsWith('otra:')?byId(v):null, ls=byId($('vCSalLoc').value)||le;
+  const me=toMin($('vCEnt').value), ms=toMin($('vCSal').value), msg=[];
+  let hi='', hf='';
+  if(me!=null){ if(le){ hi=hhmm(me-toMin(le.horas)); msg.push('Comienzo = '+$('vCEnt').value+' − '+dur(toMin(le.horas))+' de viaje'); } else msg.push('Elegí la localidad de entrada'); }
+  else hi=R.ed._legIni||'';
+  if(ms!=null){ if(ls){ hf=hhmm(ms+toMin(ls.horas)); msg.push('Finalización = '+$('vCSal').value+' + '+dur(toMin(ls.horas))+' de viaje'); } else msg.push('Elegí la ciudad de salida'); }
+  else hf=R.ed._legFin||'';
+  $('vHIni').value=hi; $('vHFin').value=hf;
+  $('vHIniTxt').textContent=hi||'--:--'; $('vHFinTxt').textContent=hf||'--:--';
+  $('vCalcHint').textContent=msg.join(' · ');
 }
-['vCEntLoc','vCSalLoc','vCEnt','vCSal'].forEach(id=>$(id).addEventListener('input',calcEditor));
+['vLocSel','vCSalLoc','vCEnt','vCSal'].forEach(id=>{ $(id).addEventListener('input',calcEditor); $(id).addEventListener('change',calcEditor); });
+
 $('vTipo').addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b) return; R.ed.tipo=b.dataset.t; pintarTipo(); });
 function checks(){ $('vLocoBox').classList.toggle('hide',!$('vTLoco').checked); $('vAlojBox').classList.toggle('hide',!$('vTAloj').checked); }
 $('vTLoco').addEventListener('change',checks); $('vTAloj').addEventListener('change',checks);
@@ -329,7 +341,7 @@ $('vForm').addEventListener('submit',e=>{
   if(v.fFin && v.fFin<v.fIni){ $('vErr').textContent='La fecha de finalización es anterior al comienzo.'; return; }
   (v._quitados||[]).filter(a=>!(v._subidos||[]).includes(a)).forEach(a=>borrarDrive(a.drive));
   (v._quitados||[]).filter(a=>(v._subidos||[]).includes(a)).forEach(a=>borrarDrive(a.drive));
-  const limpio={...v, t:Date.now(), adj:(v.adj||[]).map(({_blob,...a})=>a)}; delete limpio._nuevo; delete limpio._ip; delete limpio._subidos; delete limpio._quitados;
+  const limpio={...v, t:Date.now(), adj:(v.adj||[]).map(({_blob,...a})=>a)}; delete limpio._nuevo; delete limpio._ip; delete limpio._legIni; delete limpio._legFin; delete limpio._subidos; delete limpio._quitados;
   R.datos.v[v.id]=limpio; R.mes=v.fIni.slice(0,7);
   $('dlgV').close(); cambio(); toast('Viático guardado');
 });
@@ -529,8 +541,8 @@ function desdeCalculadora(){
   const abierto = r.salFic!=null ? viaticos().filter(v=>!v.hFin && v.tipo===t).sort((a,b)=>(b.fIni+b.hIni).localeCompare(a.fIni+a.hIni))[0] : null;
   if(abierto){
     abrirEditor(abierto);
-    $('vFFin').value=isoHoy(); $('vHFin').value=hhmm(r.salFic);
-    if(r.ls){ opcionesLoc($('vCSalLoc'), r.ls.id); } $('vCSal').value=P.marcaSal;
+    $('vFFin').value=isoHoy();
+    if(r.ls){ opcionesLoc($('vCSalLoc'), r.ls.id); } $('vCSal').value=P.marcaSal; calcEditor();
     toast('Completando el viático del '+fDM(abierto.fIni));
     return;
   }
