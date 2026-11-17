@@ -48,13 +48,20 @@ function renglones(v){
   if(!interCuenta(v)) return [[...base, String(montoLoco(v)), String(montoAloj(v))]];
   const pts=(v.inter||[]).filter(p=>p.h).sort((a,b)=>((a.f||'')+a.h).localeCompare((b.f||'')+b.h));
   const nodos=[{loc:v.localidad,f:v.fIni,h:v.hIni}, ...pts.map(p=>({loc:p.loc||v.localidad,f:p.f||v.fIni,h:p.h})), {f:v.fFin,h:v.hFin}];
-  const out=[];
-  for(let i=0;i<nodos.length-1;i++){
-    const a=nodos[i], b=nodos[i+1];
-    const ult=i===nodos.length-2, vta=sumaLoco(v,'vuelta');
-    const lc = i===0 ? String(sumaLoco(v,'ida')) : (ult && vta ? String(vta) : '');
-    out.push([a.loc, fDMY(a.f), a.h, fDMY(b.f), b.h, lc, i===0?String(montoAloj(v)):'']);
+  // Marcas del mismo día van juntas en un renglón (entrada → salida de ese día).
+  // Una marca que queda sola en su día se repite: cierra un renglón y abre el siguiente.
+  const n=nodos.length, mismo=(x,y)=>x&&y&&(x.f||'')===(y.f||'');
+  const restanDia=k=>{ let c=0; for(let t=k;t<n && mismo(nodos[t],nodos[k]);t++) c++; return c; };
+  const pares=[]; let i=0;
+  while(i<n-1){
+    const a=nodos[i], b=nodos[i+1]; pares.push([a,b]);
+    const c=nodos[i+2];
+    i = (c && restanDia(i+2)>=2 && (mismo(b,c) || mismo(a,b))) ? i+2 : i+1;
   }
+  const out=pares.map(([a,b],k)=>{
+    const lc = pares.length===1 ? montoLoco(v) : k===0 ? sumaLoco(v,'ida') : (k===pares.length-1 ? sumaLoco(v,'vuelta') : 0);
+    return [a.loc, fDMY(a.f), a.h, fDMY(b.f), b.h, String(lc), String(k===0?montoAloj(v):0)];
+  });
   return out;
 }
 function guardarLocal(){ LS.set(K.datos, R.datos); }
