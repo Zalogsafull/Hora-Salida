@@ -4,6 +4,7 @@
    Permiso drive.file: la app solo ve los archivos que ella misma crea. */
 (function(){
 'use strict';
+try{
 const GD = {
   cliente: '499878544628-pn1o30cvka3roletog6e2mio5atpo5io.apps.googleusercontent.com',
   scope: 'https://www.googleapis.com/auth/drive.file',
@@ -164,17 +165,30 @@ async function sincronizar(manual){
 function cambio(){ guardarLocal(); R.pend=true; clearTimeout(R.timer); R.timer=setTimeout(()=>sincronizar(false),1500); pintar(); }
 
 async function iniciarSesion(){
-  $('regLoginErr').textContent='';
-  if(!enWeb()){ $('regLoginErr').textContent='Google funciona cuando abrís la app desde su dirección web.'; return; }
+  const err=$('regLoginErr'), btn=$('regLogin');
+  err.textContent='';
+  if(!enWeb()){ err.textContent='Google funciona cuando abrís la app desde su dirección web.'; return; }
+  if(!(window.google && google.accounts && google.accounts.oauth2)){
+    // Google todavía no cargó: se carga y se pide tocar de nuevo (el navegador solo abre la ventana de Google con un toque)
+    btn.textContent='Cargando Google…'; btn.disabled=true;
+    try{ await cargarGIS(); btn.textContent='Tocá de nuevo para iniciar sesión'; }
+    catch(e){ btn.textContent='Iniciar sesión con Google'; err.textContent='No se pudo cargar Google. Revisá la conexión.'; }
+    btn.disabled=false; return;
+  }
+  btn.textContent='Abriendo Google…';
   try{
     await pedirToken('');
     try{ const j=await (await gapi('https://www.googleapis.com/drive/v3/about?fields=user(emailAddress,displayName)')).json();
          if(j.user){ LS.set(K.email,j.user.emailAddress||''); if(!R.datos.nombre && j.user.displayName){ R.datos.nombre=j.user.displayName; R.datos.nombreT=Date.now(); } } }catch(e){}
     LS.set(K.con,'1'); pintar(); await sincronizar(true);
   }catch(e){
-    $('regLoginErr').textContent = e && e.code==='sin_google' ? 'No se pudo cargar Google. Revisá la conexión.'
-      : e && /popup_closed|access_denied/.test(e.type||e.error||'') ? 'No se dio el permiso.' : 'No se pudo iniciar sesión con Google.';
-  }
+    const t=(e&&(e.type||e.error))||'';
+    err.textContent = e && e.code==='sin_google' ? 'No se pudo cargar Google. Revisá la conexión.'
+      : /popup_failed_to_open/.test(t) ? 'El navegador bloqueó la ventana de Google. Permití ventanas emergentes para este sitio y probá de nuevo.'
+      : /popup_closed/.test(t) ? 'Se cerró la ventana de Google antes de terminar.'
+      : /access_denied/.test(t) ? 'No se dio el permiso de Drive.'
+      : 'No se pudo iniciar sesión con Google'+(t?' ('+t+')':'')+'.';
+  }finally{ btn.textContent='Iniciar sesión con Google'; }
 }
 function cerrarSesion(){
   try{ if(R.token && window.google && google.accounts) google.accounts.oauth2.revoke(R.token,()=>{}); }catch(e){}
@@ -571,6 +585,11 @@ document.addEventListener('tab',e=>{ if(e.detail==='reg'){ pintar(); if(conectad
 document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible' && conectado() && tokenOk()) sincronizar(false); });
 window.addEventListener('online',()=>{ if(conectado() && R.pend) sincronizar(false); });
 pintar();
+if(enWeb()) setTimeout(()=>cargarGIS().catch(()=>{}), 800);
 // para pruebas
 window.__viaticos={R, generarPDF, bloque, nuevoPDF, fusionar};
+}catch(e){
+  const m=document.getElementById('regLoginErr'); if(m) m.textContent='La app no terminó de actualizarse. Cerrala y abrila de nuevo (o recargá la página). ['+(e&&e.message||e)+']';
+  console.error(e);
+}
 })();
