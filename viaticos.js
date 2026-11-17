@@ -281,7 +281,7 @@ function pintarInter(){
   $('vInterBox').classList.toggle('hide',!(c100&&on));
   $('vInterC200').classList.toggle('hide', c100 || !(R.ed.inter||[]).length);
   $('vInter').innerHTML = (R.ed.inter||[]).map((p,i)=>'<div class="irow" data-i="'+i+'"><label>'+(i+1)+'ª marca intermedia</label><div class="g2"><select class="idep" aria-label="Departamento"></select><select class="iloc" aria-label="Localidad"></select></div>'+
-    '<div class="g"><input class="if" type="date" value="'+esc(p.f||'')+'"><input class="ih" type="time" value="'+esc(p.h||'')+'"><button type="button" class="x" aria-label="Quitar">×</button></div></div>').join('')
+    '<div class="g"><input class="if" type="date" min="'+esc($('vFIni').value)+'" max="'+esc($('vFFin').value||$('vFIni').value)+'" value="'+esc(p.f||'')+'"><input class="ih" type="time" value="'+esc(p.h||'')+'"><button type="button" class="x" aria-label="Quitar">×</button></div></div>').join('')
     || '<p class="note" style="margin:0 0 8px">Todavía no hay marcas intermedias.</p>';
   $('vInter').querySelectorAll('.irow').forEach(row=>{
     const p=R.ed.inter[+row.dataset.i]; const sel=row.querySelector('.iloc');
@@ -382,11 +382,25 @@ function calcEditor(){
 ['vLocSel','vCSalLoc','vCEnt','vCSal'].forEach(id=>{ $(id).addEventListener('input',calcEditor); $(id).addEventListener('change',calcEditor); });
 
 $('vTipo').addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b) return; R.ed.tipo=b.dataset.t; pintarTipo(); });
+// días del viático (fecha comienzo → finalización) para elegir el día de locomoción y alojamiento
+function diasRango(){
+  const a=$('vFIni').value, b=$('vFFin').value||a; if(!a) return [];
+  const out=[]; const d=new Date(a+'T12:00'), fin=new Date((b<a?a:b)+'T12:00');
+  while(d<=fin && out.length<62){ out.push(d.toISOString().slice(0,10)); d.setDate(d.getDate()+1); }
+  return out;
+}
+function ajustarDia(f, dias){ if(!dias.length) return f||''; if(dias.includes(f)) return f; return (f && f>dias[dias.length-1]) ? dias[dias.length-1] : dias[0]; }
+function selDia(cls, f){
+  const dias=diasRango(), val=ajustarDia(f,dias);
+  return '<select class="'+cls+'" aria-label="Día">'+dias.map((d,i)=>'<option value="'+d+'"'+(d===val?' selected':'')+'>'+fDM(d)+' · día '+(i+1)+'</option>').join('')+'</select>';
+}
+function refrescarDias(){ leerLocos(); leerAlojs(); if(R.ed._lp) pintarLocos(); if(R.ed._ap) pintarAlojs(); }
+['vFIni','vFFin'].forEach(id=>$(id).addEventListener('change',refrescarDias));
 function pintarLocos(){
   R.ed._lp=true;
   $('vLocos').innerHTML = R.ed.locos.map((l,i)=>'<div class="lrow" data-l="'+esc(l.id)+'"><label>Locomoción '+(i+1)+'</label>'+
     '<div class="seg"><button type="button" data-tr="ida"'+(l.tramo!=='vuelta'?' class="on"':'')+'>Ida</button><button type="button" data-tr="vuelta"'+(l.tramo==='vuelta'?' class="on"':'')+'>Vuelta</button></div>'+
-    '<div class="g"><input class="lf" type="date" value="'+esc(l.f||'')+'" aria-label="Día"><input class="lm" type="number" inputmode="decimal" min="0" step="1" placeholder="Monto $" value="'+(+l.monto||'')+'" aria-label="Monto"><button type="button" class="lx" aria-label="Quitar">×</button></div>'+
+    '<div class="g">'+selDia('lf',l.f)+'<input class="lm" type="number" inputmode="decimal" min="0" step="1" placeholder="Monto $" value="'+(+l.monto||'')+'" aria-label="Monto"><button type="button" class="lx" aria-label="Quitar">×</button></div>'+
     '<div class="adjhead"><span class="note">Comprobante</span><label class="gps">＋ Agregar<input class="lin" type="file" accept="application/pdf,image/*" multiple hidden></label></div>'+
     '<div class="adjlist" data-lc="'+esc(l.id)+'"></div></div>').join('') || '<p class="note" style="margin:0 0 8px">Sin locomociones.</p>';
   pintarAdj();
@@ -408,7 +422,7 @@ $('vLocos').addEventListener('change',e=>{ if(e.target.classList.contains('lin')
 function pintarAlojs(){
   R.ed._ap=true;
   $('vAlojs').innerHTML = R.ed.alojs.map((a,i)=>'<div class="arow" data-al="'+esc(a.id)+'"><label>Alojamiento '+(i+1)+'</label>'+
-    '<div class="g"><input class="af" type="date" value="'+esc(a.f||'')+'" aria-label="Día"><input class="am" type="number" inputmode="decimal" min="0" step="1" placeholder="Monto $" value="'+(+a.monto||'')+'" aria-label="Monto"><button type="button" class="ax" aria-label="Quitar">×</button></div>'+
+    '<div class="g">'+selDia('af',a.f)+'<input class="am" type="number" inputmode="decimal" min="0" step="1" placeholder="Monto $" value="'+(+a.monto||'')+'" aria-label="Monto"><button type="button" class="ax" aria-label="Quitar">×</button></div>'+
     '<div class="adjhead"><span class="note">Comprobante</span><label class="gps">＋ Agregar<input class="ain" type="file" accept="application/pdf,image/*" multiple hidden></label></div>'+
     '<div class="adjlist" data-ac="'+esc(a.id)+'"></div></div>').join('') || '<p class="note" style="margin:0 0 8px">Sin alojamientos.</p>';
   pintarAdj();
@@ -444,6 +458,8 @@ $('vForm').addEventListener('submit',e=>{
   const v=R.ed;
   if(!v.localidad || !v.fIni){ $('vErr').textContent='Completá la localidad y la fecha de comienzo.'; return; }
   if(v.fFin && v.fFin<v.fIni){ $('vErr').textContent='La fecha de finalización es anterior al comienzo.'; return; }
+  const fueraRango=f=>f && (f<v.fIni || f>(v.fFin||v.fIni));
+  if(v.tLoco && (v.locos||[]).some(l=>fueraRango(l.f)) || v.tAloj && (v.alojs||[]).some(a=>fueraRango(a.f))){ $('vErr').textContent='Hay locomoción o alojamiento con un día fuera del viático.'; return; }
   (v._quitados||[]).filter(a=>!(v._subidos||[]).includes(a)).forEach(a=>borrarDrive(a.drive));
   (v._quitados||[]).filter(a=>(v._subidos||[]).includes(a)).forEach(a=>borrarDrive(a.drive));
   const limpio={...v, t:Date.now(), adj:(v.adj||[]).map(({_blob,...a})=>a)}; delete limpio._nuevo; delete limpio._ip; delete limpio._lp; delete limpio.loco; delete limpio._ap; delete limpio.aloj; delete limpio._legIni; delete limpio._legFin; delete limpio._subidos; delete limpio._quitados;
