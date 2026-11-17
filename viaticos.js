@@ -637,13 +637,36 @@ async function analizarPagina(cv, ws){
   const sap=ws.find((x,i)=>/^SAP$/i.test(x.t) && ws[i-1] && /^Marcas$/i.test(ws[i-1].t));
   const titulo = sap ? ws[ws.indexOf(sap)-1] : null;
   const desdeY = titulo ? titulo.y1 : 0;
-  let fechas=ws.filter(x=>x.y0>desdeY && isoDe(x.t));
-  if(!fechas.length) return {filas:[], titulo:null};
+  // tabla "Marcas del día": si se imprime el mismo día, las marcas de hoy salen ahí y no en "Marcas SAP"
+  const del_=ws.find((x,i)=>/^del$/i.test(x.t) && ws[i-1] && /^Marcas$/i.test(ws[i-1].t) && ws[i+1] && /^d[ií]a$/i.test(ws[i+1].t));
+  const dia=[];
+  if(del_){
+    const hasta = titulo ? titulo.y0 : Infinity;
+    for(const d of ws.filter(x=>x.y0>del_.y1 && x.y1<hasta && isoDe(x.t))){
+      const yc=(d.y0+d.y1)/2, hh=(d.y1-d.y0);
+      const fila=ws.filter(z=>z!==d && Math.abs((z.y0+z.y1)/2-yc)<hh && z.x0>d.x1).sort((a,b)=>a.x0-b.x0);
+      // columnas por el encabezado: Hora Entrada · Origen Entrada · Hora Salida · Origen Salida
+      const cabD=ws.filter(z=>z.y0>del_.y1 && z.y1<d.y0);
+      const hs=cabD.filter(z=>/^Hora$/i.test(z.t)).sort((a,b)=>a.x0-b.x0), os=cabD.filter(z=>/^Origen$/i.test(z.t)).sort((a,b)=>a.x0-b.x0);
+      const centro=(w)=>{ if(!w) return null; const sig=cabD.find(z=>Math.abs(z.y0-w.y0)<6 && z.x0>w.x1 && z.x0<w.x1+40); return (w.x0+(sig?sig.x1:w.x1))/2; };
+      const cerca=(c, esHora)=>{ if(c==null) return null; const cand=fila.filter(z=>Math.abs((z.x0+z.x1)/2-c)<70 && (!esHora || /:/.test(z.t) || /^\d{4}$/.test(z.t))); cand.sort((a,b)=>Math.abs((a.x0+a.x1)/2-c)-Math.abs((b.x0+b.x1)/2-c)); return cand[0]||null; };
+      const tE=cerca(centro(hs[0]),true), tS=cerca(centro(hs[1]),true), oE=cerca(centro(os[0])), oS=cerca(centro(os[1]));
+      dia.push({f:isoDe(d.t), ent:tE?normHora(tE.t):null, sal:tS?normHora(tS.t):null, oEnt:oE?oE.t:'', oSal:oS?oS.t:'', sint:true});
+    }
+  }
+  const enDia=new Set(del_ ? ws.filter(x=>x.y0>del_.y1 && (!titulo || x.y1<titulo.y0)) : []);
+  let fechas=ws.filter(x=>x.y0>desdeY && isoDe(x.t) && !enDia.has(x));
+  if(!fechas.length) return {filas:[], titulo:null, dia};
   const xmin=Math.min(...fechas.map(x=>x.x0)); fechas=fechas.filter(x=>x.x0<xmin+40).sort((a,b)=>a.y0-b.y0);
   const cab = titulo ? ws.find(x=>/^Fecha$/i.test(x.t) && x.y0>titulo.y1 && x.y1<fechas[0].y0) : null;
   const colHoras = titulo ? ws.find(x=>/^Horas$/i.test(x.t) && x.y0>titulo.y1 && x.y1<fechas[0].y0) : null;
   const enCab = re => titulo ? ws.filter(x=>re.test(x.t) && x.y0>titulo.y1 && x.y1<fechas[0].y0).sort((a,b)=>a.x0-b.x0)[0] : null;
-  const colEnt=enCab(/^Entrada$/i), colSal=enCab(/^Salida$/i);
+  const colEnt=enCab(/^Entrada$/i), colSal=enCab(/^Salida$/i), colEfec=enCab(/^Efectivas$/i);
+  const origs = titulo ? ws.filter(x=>/^Origen$/i.test(x.t) && x.y0>titulo.y1 && x.y1<fechas[0].y0).sort((a,b)=>a.x0-b.x0) : [];
+  const cx = w => w ? (w.x0+w.x1)/2 : null;
+  // centros de columna (el de origen se toma de "Origen Entrada" / "Origen Salida" completos)
+  const centroOrigen = o => { if(!o) return null; const sig=ws.find(z=>Math.abs(z.y0-o.y0)<6 && z.x0>o.x1 && z.x0<o.x1+40); return (o.x0+(sig?sig.x1:o.x1))/2; };
+  const cols={fecha:cx(cab), ent:cx(colEnt), sal:cx(colSal), horas:cx(colHoras), efec:cx(colEfec), oEnt:centroOrigen(origs[0]), oSal:centroOrigen(origs[1])};
   const cs=fechas.map(x=>(x.y0+x.y1)/2), dif=[]; for(let i=1;i<cs.length;i++) dif.push(cs[i]-cs[i-1]);
   dif.sort((a,b)=>a-b);
   const paso = dif.length ? dif[Math.floor(dif.length/2)] : (cab ? (cs[0]-(cab.y0+cab.y1)/2) : 60);
@@ -652,12 +675,30 @@ async function analizarPagina(cv, ws){
     let horas=null;
     if(colHoras){ const hc=(colHoras.x0+colHoras.x1)/2; const h=ws.find(z=>z.y0>y0 && z.y1<y1 && Math.abs((z.x0+z.x1)/2-hc)<45 && normHora(z.t)); if(h) horas=normHora(h.t); }
     const hora = col => { if(!col) return null; const c=(col.x0+col.x1)/2; const h=ws.find(z=>z.y0>y0 && z.y1<y1 && Math.abs((z.x0+z.x1)/2-c)<45 && normHora(z.t) && toMin(normHora(z.t))!=null && +normHora(z.t).slice(0,2)<24); return h?normHora(h.t):null; };
-    return {f:isoDe(x.t), y0:Math.max(0,y0), y1:Math.min(cv.height,y1), horas, ent:hora(colEnt), sal:hora(colSal)};
+    // orígenes completos de la fila (para completar los de "Marcas del día", que solo traen el código)
+    let oEnt='', oSal='';
+    if(cols.oEnt!=null && cols.oSal!=null && colEfec){ const mid=(cols.oEnt+cols.oSal)/2;
+      const tk=ws.filter(z=>z.y0>y0 && z.y1<y1 && z.x0>colEfec.x1+8).sort((a,b)=>a.x0-b.x0);
+      oEnt=tk.filter(z=>cx(z)<mid).map(z=>z.t).join(' '); oSal=tk.filter(z=>cx(z)>=mid).map(z=>z.t).join(' '); }
+    return {f:isoDe(x.t), y0:Math.max(0,y0), y1:Math.min(cv.height,y1), horas, ent:hora(colEnt), sal:hora(colSal), oEnt, oSal};
   });
   const enTabla=ws.filter(z=>z.y0>=(titulo?titulo.y0:filas[0].y0) && z.y1<=filas[filas.length-1].y1);
   const x0=Math.max(0, Math.min(...enTabla.map(z=>z.x0))-28), x1=Math.min(cv.width, Math.max(...enTabla.map(z=>z.x1))+28);
-  return {filas, x0, x1, titulo: titulo ? {y0:Math.max(0,titulo.y0-22), y1: filas[0].y0} : null};
+  return {filas, x0, x1, titulo: titulo ? {y0:Math.max(0,titulo.y0-22), y1: filas[0].y0} : null, dia, cols, paso, fs:(fechas[0].y1-fechas[0].y0)};
 }
+// marcas del día que no están en "Marcas SAP" (impresión hecha el mismo día)
+function filasDia(paginas){
+  const sap=new Set(paginas.flatMap(p=>p.filas.map(f=>f.f)));
+  const out=[]; for(const p of paginas) for(const d of p.dia||[]) if(!sap.has(d.f) && !out.some(o=>o.f===d.f && o.ent===d.ent)) out.push(d);
+  return out;
+}
+function nombreOrigen(paginas, cod){
+  if(!cod) return '';
+  const n=(/^\d+/.exec(cod)||[])[0]; if(!n) return cod;
+  for(const p of paginas) for(const f of p.filas) for(const o of [f.oEnt,f.oSal]) if(o && o.startsWith(n+' ')) return o;
+  return cod;
+}
+function restarHoras(a,b){ const x=toMin(a), y=toMin(b); if(x==null||y==null) return null; let d=y-x; if(d<0) d+=1440; return String(Math.floor(d/60)).padStart(2,'0')+':'+String(d%60).padStart(2,'0'); }
 function analizarMarcas(driveId){
   if(OCR.cache[driveId]) return OCR.cache[driveId];
   const pr=(async()=>{
@@ -687,7 +728,13 @@ async function imagenMarcasViatico(v){
   if(!paginas.length) return null;
   const fin=v.fFin||v.fIni, filas=[];
   for(const p of paginas) for(const f of p.filas) if(f.f>=v.fIni && f.f<=fin) filas.push({p,f});
-  const base=paginas.find(p=>p.titulo) || paginas[0];
+  const base=paginas.find(p=>p.titulo && p.cols) || paginas.find(p=>p.titulo) || paginas[0];
+  // las del día se dibujan como una fila más de "Marcas SAP"
+  if(base.cols && base.cols.fecha!=null) for(const d of filasDia(paginas)) if(d.f>=v.fIni && d.f<=fin){
+    const h=restarHoras(d.ent,d.sal);
+    filas.push({p:base, f:{...d, horas:h, oEnt:nombreOrigen(paginas,d.oEnt), oSal:nombreOrigen(paginas,d.oSal), y0:0, y1:base.paso}});
+  }
+  filas.sort((a,b)=>(a.f.f+(a.f.ent||'')).localeCompare(b.f.f+(b.f.ent||'')));
   const W=Math.max(...[base, ...filas.map(x=>x.p)].map(p=>p.x1-p.x0));
   const k=base.cv.width/1700, cabH=Math.round(330*k);
   const tit = base.titulo ? base.titulo.y1-base.titulo.y0 : 0;
@@ -706,14 +753,29 @@ async function imagenMarcasViatico(v){
   c.fillStyle='#222'; c.font=fuente(18); c.fillText('🕓 Total Horas Realizadas: '+sumaHoras(filas.map(x=>x.f.horas)),px-Math.round(10*k),Math.round(296*k));
   let y=cabH;
   if(base.titulo){ c.drawImage(base.cv, base.x0, base.titulo.y0, W, tit, 0, y, W, tit); y+=tit; }
-  for(const {p,f} of filas){ const h=f.y1-f.y0; c.drawImage(p.cv, p.x0, f.y0, W, h, 0, y, W, h); y+=h; }
+  for(const {p,f} of filas){
+    const h=f.y1-f.y0;
+    if(!f.sint){ c.drawImage(p.cv, p.x0, f.y0, W, h, 0, y, W, h); y+=h; continue; }
+    // fila armada con los datos de "Marcas del día", con el mismo formato que las de "Marcas SAP"
+    const C=base.cols, X=xx=>xx-base.x0, fs=Math.round(base.fs*0.92), yc=y+h/2;
+    // mismo fondo que las filas recortadas
+    let fondo='#fff'; try{ const r0=base.filas[base.filas.length-1]; const px2=base.cv.getContext('2d').getImageData(base.x0+6, Math.round((r0.y0+r0.y1)/2), 1, 1).data; fondo='rgb('+px2[0]+','+px2[1]+','+px2[2]+')'; }catch(e){}
+    c.fillStyle=fondo; c.fillRect(0,y,W,h);
+    c.strokeStyle='#dee2e6'; c.lineWidth=Math.max(1,1.5*k); c.beginPath(); c.moveTo(X(base.x0+28),y+0.5); c.lineTo(W-28,y+0.5); c.stroke();
+    c.textAlign='center'; c.textBaseline='middle'; c.fillStyle='#212529';
+    c.font='700 '+fs+'px "Segoe UI", Arial, sans-serif'; c.fillText(fDMY(f.f), X(C.fecha), yc);
+    c.font='400 '+fs+'px "Segoe UI", Arial, sans-serif';
+    const put=(t,col)=>{ if(t && col!=null) c.fillText(t, X(col), yc); };
+    put(f.ent,C.ent); put(f.sal,C.sal); put(f.horas,C.horas); put(f.horas,C.efec); put(f.oEnt,C.oEnt); put(f.oSal,C.oSal);
+    c.textAlign='left'; y+=h;
+  }
   return {cv, fw: W/base.cv.width, n:filas.length};
 }
 /* --- control: marcas cargadas en los viáticos vs. marcas de la intranet --- */
 const TOL_MIN = 10; // diferencia tolerada (redondeos de pocos minutos)
 async function marcasIntranet(v){
   const out=[];
-  for(const m of mesesDe(v)){ const x=(R.datos.marcasMes||{})[m]; if(x && x.drive) for(const p of await analizarMarcas(x.drive)) out.push(...p.filas); }
+  for(const m of mesesDe(v)){ const x=(R.datos.marcasMes||{})[m]; if(x && x.drive){ const ps=await analizarMarcas(x.drive); for(const p of ps) out.push(...p.filas); out.push(...filasDia(ps)); } }
   return out;
 }
 function difMin(a,b){ const x=toMin(a), y=toMin(b); return x==null||y==null ? null : Math.abs(x-y); }
@@ -752,7 +814,7 @@ async function estadoMarcasMes(){
   if(!m || !m.drive){ el.textContent=''; return; }
   el.textContent='Leyendo las marcas del PDF…';
   try{
-    const pags=await analizarMarcas(m.drive), dias=[...new Set(pags.flatMap(p=>p.filas.map(f=>f.f)))].sort();
+    const pags=await analizarMarcas(m.drive), dias=[...new Set([...pags.flatMap(p=>p.filas.map(f=>f.f)), ...filasDia(pags).map(d=>d.f)])].sort();
     if((R.datos.marcasMes||{})[R.mes]!==m) return;
     el.textContent = dias.length ? dias.length+' día(s) con marcas: '+dias.map(d=>d.slice(8,10)).join(', ') : 'No se encontraron marcas en el PDF. ¿Es la impresión de "Marcas SAP"?';
     if(dias.length) chequearMes();
