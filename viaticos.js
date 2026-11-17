@@ -36,8 +36,9 @@ const alojCuenta = v => v.tipo==='C100' && !!v.tAloj;
 const locosDe = v => Array.isArray(v.locos) ? v.locos : ((+v.loco>0 || (v.adj||[]).some(a=>claseDe(a)==='loco')) ? [{id:'l0', tramo:'ida', f:v.fIni, monto:+v.loco||0}] : []);
 const sumaLoco = (v,tr) => tieneLoco(v) ? locosDe(v).filter(l=>!tr || (tr==='vuelta') === (l.tramo==='vuelta')).reduce((s,l)=>s+(+l.monto||0),0) : 0;
 const montoLoco = v => sumaLoco(v);
-const montoAloj = v => alojCuenta(v) ? (+v.aloj||0) : 0;
-const ordenAdj = (v,a) => { if(claseDe(a)!=='loco') return 1000; const ls=locosDe(v); const i=ls.findIndex(l=>l.id===a.item); const l=ls[i]; return (l&&l.tramo==='vuelta'?500:0)+(i<0?0:i); };
+const alojsDe = v => Array.isArray(v.alojs) ? v.alojs : ((+v.aloj>0 || (v.adj||[]).some(a=>a.clase==='aloj')) ? [{id:'a0', f:v.fIni, monto:+v.aloj||0}] : []);
+const montoAloj = v => alojCuenta(v) ? alojsDe(v).reduce((s,a)=>s+(+a.monto||0),0) : 0;
+const ordenAdj = (v,a) => { if(claseDe(a)!=='loco'){ const i=alojsDe(v).findIndex(x=>x.id===a.item); return 1000+(i<0?0:i); } const ls=locosDe(v); const i=ls.findIndex(l=>l.id===a.item); const l=ls[i]; return (l&&l.tramo==='vuelta'?500:0)+(i<0?0:i); };
 const compsPDF = v => (v.adj||[]).filter(a => (claseDe(a)==='loco' && tieneLoco(v)) || (a.clase==='aloj' && alojCuenta(v)))
   .sort((a,b)=>ordenAdj(v,a)-ordenAdj(v,b));
 const pesos = n => '$'+(+n).toLocaleString('es-UY');
@@ -46,6 +47,23 @@ const interCuenta = v => v.tipo==='C100' && !!v.tInter && (v.inter||[]).some(p=>
 function renglones(v){
   const base=[v.localidad, fDMY(v.fIni), v.hIni, fDMY(v.fFin), v.hFin];
   if(!interCuenta(v)) return [[...base, String(montoLoco(v)), String(montoAloj(v))]];
+  return renglonesInter(v);
+}
+function alojEnRenglones(v, pares){
+  const n=pares.length, out=new Array(n).fill(0);
+  if(!alojCuenta(v)) return out;
+  const al=alojsDe(v).filter(a=>+a.monto>0); if(!al.length) return out;
+  if(n===1){ out[0]=al.reduce((s,a)=>s+(+a.monto),0); return out; }
+  const medio=Math.floor((n-1)/2);
+  const porDia=f=>{ let k=pares.findIndex(([a])=>a.f===f); if(k<0) k=pares.findIndex(([,b])=>b.f===f); return k; };
+  for(const a of al){
+    let k = (al.length===1 && n%2===1) ? medio : porDia(a.f);
+    if(k<0) k=medio;
+    out[k]+=(+a.monto);
+  }
+  return out;
+}
+function renglonesInter(v){
   const pts=(v.inter||[]).filter(p=>p.h).sort((a,b)=>((a.f||'')+a.h).localeCompare((b.f||'')+b.h));
   const nodos=[{loc:v.localidad,f:v.fIni,h:v.hIni}, ...pts.map(p=>({loc:p.loc||v.localidad,f:p.f||v.fIni,h:p.h})), {f:v.fFin,h:v.hFin}];
   // Marcas del mismo día van juntas en un renglón (entrada → salida de ese día).
@@ -58,9 +76,10 @@ function renglones(v){
     const c=nodos[i+2];
     i = (c && restanDia(i+2)>=2 && (mismo(b,c) || mismo(a,b))) ? i+2 : i+1;
   }
+  const alo=alojEnRenglones(v,pares);
   const out=pares.map(([a,b],k)=>{
     const lc = pares.length===1 ? montoLoco(v) : k===0 ? sumaLoco(v,'ida') : (k===pares.length-1 ? sumaLoco(v,'vuelta') : 0);
-    return [a.loc, fDMY(a.f), a.h, fDMY(b.f), b.h, String(lc), String(k===0?montoAloj(v):0)];
+    return [a.loc, fDMY(a.f), a.h, fDMY(b.f), b.h, String(lc), String(alo[k])];
   });
   return out;
 }
@@ -291,7 +310,7 @@ function pintarAdj(){
   const item=a=>'<div class="adj" data-a="'+esc(a.id)+'"><div class="th" id="th_'+esc(a.id)+'">'+(a.mime==='application/pdf'?'PDF':'…')+'</div><div class="nm">'+esc(a.nombre||'')+'</div><button type="button" class="x" data-x="'+esc(a.id)+'" aria-label="Quitar">×</button></div>';
   const adj=R.ed.adj||[];
   document.querySelectorAll('#vLocos [data-lc]').forEach(el=>{ const id=el.dataset.lc; el.innerHTML = adj.filter(a=>claseDe(a)==='loco' && a.item===id).map(item).join('') || '<span class="note">Sin comprobante.</span>'; });
-  $('vAlojAdj').innerHTML = adj.filter(a=>a.clase==='aloj').map(item).join('') || '<span class="note">Sin comprobantes.</span>';
+  document.querySelectorAll('#vAlojs [data-ac]').forEach(el=>{ const id=el.dataset.ac; el.innerHTML = adj.filter(a=>a.clase==='aloj' && a.item===id).map(item).join('') || '<span class="note">Sin comprobante.</span>'; });
   adj.forEach(async a=>{
     if(a.mime==='application/pdf') return;
     try{ const b=a._blob || await bajar(a.drive); const el=document.getElementById('th_'+a.id); if(el){ el.style.backgroundImage='url('+URL.createObjectURL(b)+')'; el.textContent=''; } }catch(e){}
@@ -304,11 +323,12 @@ function abrirEditor(v){
   $('vTitle').textContent = nuevo ? 'Nuevo viático' : 'Editar viático';
   ponerLocalidad(R.ed.localidad||'');
   $('vFIni').value=R.ed.fIni||''; $('vHIni').value=R.ed.hIni||''; $('vFFin').value=R.ed.fFin||''; $('vHFin').value=R.ed.hFin||'';
-  $('vAloj').value = R.ed.aloj||0;
+  R.ed.alojs = JSON.parse(JSON.stringify(alojsDe(R.ed))); R.ed._ap=false;
+  (R.ed.adj||[]).forEach(a=>{ if(a.clase==='aloj' && !R.ed.alojs.some(x=>x.id===a.item)){ if(!R.ed.alojs.length) R.ed.alojs.push({id:uid(),f:R.ed.fIni,monto:0}); a.item=R.ed.alojs[0].id; } });
   R.ed.locos = JSON.parse(JSON.stringify(locosDe(R.ed))); R.ed._lp=false;
   (R.ed.adj||[]).forEach(a=>{ if(claseDe(a)==='loco' && !R.ed.locos.some(l=>l.id===a.item)){ if(!R.ed.locos.length) R.ed.locos.push({id:uid(),tramo:'ida',f:R.ed.fIni,monto:0}); a.item=R.ed.locos[0].id; a.clase='loco'; } });
   R.ed.inter=R.ed.inter||[]; $('vTInter').checked=!!R.ed.tInter; $('vInter').innerHTML='';
-  $('vTLoco').checked = tieneLoco(R.ed); $('vTAloj').checked = !!R.ed.tAloj; checks(); pintarLocos();
+  $('vTLoco').checked = tieneLoco(R.ed); $('vTAloj').checked = !!R.ed.tAloj; checks(); pintarLocos(); pintarAlojs();
   opcionesLoc($('vCSalLoc'), R.ed.cSalLoc || ($('vLocSel').value.startsWith('otra:')?'':$('vLocSel').value));
   $('vCEnt').value=R.ed.cEnt||''; $('vCSal').value=R.ed.cSal||''; _entAnt=$('vLocSel').value;
   // horas cargadas antes sin marca: se conservan hasta que se cargue la marca
@@ -344,7 +364,7 @@ function leerEditor(){
     tInter:$('vTInter').checked, inter:(leerInter(), R.ed.inter.filter(p=>p.h||p.loc)),
     tLoco:$('vTLoco').checked, tAloj:$('vTAloj').checked,
     locos:(leerLocos(), R.ed.locos.map(l=>({id:l.id, tramo:l.tramo, f:l.f, monto:Math.max(0,Math.round(+l.monto||0))}))),
-    aloj: Math.max(0, Math.round(+$('vAloj').value||0)),
+    alojs:(leerAlojs(), R.ed.alojs.map(a=>({id:a.id, f:a.f, monto:Math.max(0,Math.round(+a.monto||0))}))),
     cEntLoc:$('vLocSel').value, cSalLoc:$('vCSalLoc').value, cEnt:$('vCEnt').value, cSal:$('vCSal').value});
 }
 function calcEditor(){
@@ -385,9 +405,30 @@ $('vLocos').addEventListener('click',e=>{
   quitarAdj(e);
 });
 $('vLocos').addEventListener('change',e=>{ if(e.target.classList.contains('lin')){ const f=[...e.target.files]; e.target.value=''; leerLocos(); subirComps(f,'loco',e.target.closest('.lrow').dataset.l); } });
+function pintarAlojs(){
+  R.ed._ap=true;
+  $('vAlojs').innerHTML = R.ed.alojs.map((a,i)=>'<div class="arow" data-al="'+esc(a.id)+'"><label>Alojamiento '+(i+1)+'</label>'+
+    '<div class="g"><input class="af" type="date" value="'+esc(a.f||'')+'" aria-label="Día"><input class="am" type="number" inputmode="decimal" min="0" step="1" placeholder="Monto $" value="'+(+a.monto||'')+'" aria-label="Monto"><button type="button" class="ax" aria-label="Quitar">×</button></div>'+
+    '<div class="adjhead"><span class="note">Comprobante</span><label class="gps">＋ Agregar<input class="ain" type="file" accept="application/pdf,image/*" multiple hidden></label></div>'+
+    '<div class="adjlist" data-ac="'+esc(a.id)+'"></div></div>').join('') || '<p class="note" style="margin:0 0 8px">Sin alojamientos.</p>';
+  pintarAdj();
+}
+function leerAlojs(){
+  if(!R.ed._ap) return;
+  R.ed.alojs=[...$('vAlojs').querySelectorAll('.arow')].map(r=>({id:r.dataset.al, f:r.querySelector('.af').value, monto:r.querySelector('.am').value}));
+}
+function nuevoAloj(){ leerAlojs(); const n=R.ed.alojs.length, u=R.ed.alojs[n-1]; let f=$('vFIni').value;
+  if(u && u.f){ const d=new Date(u.f+'T12:00'); d.setDate(d.getDate()+1); f=d.toISOString().slice(0,10); }
+  R.ed.alojs.push({id:uid(), f, monto:''}); pintarAlojs(); }
+$('vAlojAdd').addEventListener('click',nuevoAloj);
+$('vAlojs').addEventListener('click',e=>{
+  const ax=e.target.closest('.ax');
+  if(ax){ leerAlojs(); const id=ax.closest('.arow').dataset.al; R.ed.adj.filter(a=>a.item===id).forEach(a=>R.ed._quitados.push(a)); R.ed.adj=R.ed.adj.filter(a=>a.item!==id); R.ed.alojs=R.ed.alojs.filter(a=>a.id!==id); pintarAlojs(); return; }
+  quitarAdj(e);
+});
+$('vAlojs').addEventListener('change',e=>{ if(e.target.classList.contains('ain')){ const f=[...e.target.files]; e.target.value=''; leerAlojs(); subirComps(f,'aloj',e.target.closest('.arow').dataset.al); } });
 function checks(){ $('vLocoBox').classList.toggle('hide',!$('vTLoco').checked); $('vAlojBox').classList.toggle('hide',!$('vTAloj').checked); }
-$('vTLoco').addEventListener('change',()=>{ checks(); if($('vTLoco').checked && !R.ed.locos.length) nuevaLoco(); }); $('vTAloj').addEventListener('change',checks);
-['vAlojAdj'].forEach(id=>$(id).addEventListener('click',quitarAdj));
+$('vTLoco').addEventListener('change',()=>{ checks(); if($('vTLoco').checked && !R.ed.locos.length) nuevaLoco(); }); $('vTAloj').addEventListener('change',()=>{ checks(); if($('vTAloj').checked && !R.ed.alojs.length) nuevoAloj(); });
 function quitarAdj(e){
   const x=e.target.closest('[data-x]'); if(!x) return;
   const a=R.ed.adj.find(a=>a.id===x.dataset.x); if(!a) return;
@@ -405,7 +446,7 @@ $('vForm').addEventListener('submit',e=>{
   if(v.fFin && v.fFin<v.fIni){ $('vErr').textContent='La fecha de finalización es anterior al comienzo.'; return; }
   (v._quitados||[]).filter(a=>!(v._subidos||[]).includes(a)).forEach(a=>borrarDrive(a.drive));
   (v._quitados||[]).filter(a=>(v._subidos||[]).includes(a)).forEach(a=>borrarDrive(a.drive));
-  const limpio={...v, t:Date.now(), adj:(v.adj||[]).map(({_blob,...a})=>a)}; delete limpio._nuevo; delete limpio._ip; delete limpio._lp; delete limpio.loco; delete limpio._legIni; delete limpio._legFin; delete limpio._subidos; delete limpio._quitados;
+  const limpio={...v, t:Date.now(), adj:(v.adj||[]).map(({_blob,...a})=>a)}; delete limpio._nuevo; delete limpio._ip; delete limpio._lp; delete limpio.loco; delete limpio._ap; delete limpio.aloj; delete limpio._legIni; delete limpio._legFin; delete limpio._subidos; delete limpio._quitados;
   R.datos.v[v.id]=limpio; R.mes=v.fIni.slice(0,7);
   $('dlgV').close(); cambio(); toast('Viático guardado');
 });
@@ -452,7 +493,6 @@ async function subirComps(files, clase, item){
     }catch(err){ $('vErr').textContent='No se pudo subir '+f.name+(err&&err.code==='token'?': renová el permiso de Google.':'.'); }
   }
 }
-$('vAlojIn').addEventListener('change', e=>{ const f=[...e.target.files]; e.target.value=''; subirComps(f,'aloj'); });
 /* ---------------- PDF de marcas del mes ---------------- */
 let _pdfjs=null;
 function cargarScript(src){ return new Promise((ok,mal)=>{ const s=document.createElement('script'); s.src=src; s.onload=ok; s.onerror=()=>mal(new Error('No se pudo cargar '+src)); document.head.appendChild(s); }); }
