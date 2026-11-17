@@ -305,6 +305,13 @@
       <div><label for="vFIni">Fecha comienzo</label><input id="vFIni" type="date" required></div>
       <div><label for="vCEnt">Marca de entrada</label><input id="vCEnt" type="time"></div>
     </div>
+    <label class="chk" id="vInterChk"><input type="checkbox" id="vTInter"> Tiene marcas intermedias</label>
+    <div class="adjbox hide" id="vInterBox">
+      <div class="hint" style="margin:0 0 8px">Cada marca intermedia agrega un renglón en la planilla: comienzo → 1ª marca, 1ª → 2ª … última → finalización.</div>
+      <div id="vInter"></div>
+      <button class="gps" type="button" id="vInterAdd">＋ Agregar marca</button>
+    </div>
+    <div class="hint bad hide" id="vInterC200" style="margin:-4px 0 8px">Las marcas intermedias son solo para C100: en C200 quedan guardadas pero la planilla muestra solo comienzo y finalización.</div>
     <div class="sub2">Salida</div>
     <div class="f"><label for="vCSalLoc">Ciudad de la marca de salida</label><select id="vCSalLoc"></select></div>
     <div class="g2 f">
@@ -317,13 +324,6 @@
       <div><span>Hora finalización</span><b id="vHFinTxt">--:--</b></div>
     </div>
     <div class="hint" id="vCalcHint" style="margin:-4px 0 10px"></div>
-    <label class="chk" id="vInterChk"><input type="checkbox" id="vTInter"> Tiene marcas intermedias</label>
-    <div class="adjbox hide" id="vInterBox">
-      <div class="hint" style="margin:0 0 8px">Cada marca intermedia agrega un renglón en la planilla: comienzo → 1ª marca, 1ª → 2ª … última → finalización.</div>
-      <div id="vInter"></div>
-      <button class="gps" type="button" id="vInterAdd">＋ Agregar marca</button>
-    </div>
-    <div class="hint bad hide" id="vInterC200" style="margin:-4px 0 8px">Las marcas intermedias son solo para C100: en C200 quedan guardadas pero la planilla muestra solo comienzo y finalización.</div>
     <label class="chk"><input type="checkbox" id="vTLoco"> Tiene locomoción</label>
     <div class="adjbox hide" id="vLocoBox">
       <div class="f"><label for="vLoco">Monto locomoción $</label><input id="vLoco" type="number" inputmode="decimal" min="0" step="1" value="0"></div>
