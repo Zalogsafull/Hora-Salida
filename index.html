@@ -80,6 +80,28 @@
   dialog h3{margin:0 0 12px}
   .f{margin-bottom:12px}
   .hide{display:none!important}
+  nav button{font-size:14px}
+  dialog.full{width:min(96vw,560px);max-height:94vh}
+  dialog.full form{padding:16px;overflow:auto}
+  .mesbar{display:flex;align-items:center;justify-content:space-between;gap:8px}
+  .mesbar b{font-size:17px;text-transform:capitalize}
+  .vgrp{font-size:12px;font-weight:800;letter-spacing:.06em;color:var(--muted);margin:14px 2px 6px;display:flex;justify-content:space-between}
+  .vit{background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:6px;cursor:pointer}
+  .vit .t1{font-weight:700}.vit .t2{font-size:13.5px;color:var(--muted);font-variant-numeric:tabular-nums;margin-top:2px}
+  .vit .open{color:#b26a00;font-weight:700}
+  .adjbox{border:1px solid var(--line);border-radius:12px;padding:10px;margin-bottom:10px}
+  .adjhead{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px}
+  .adjhead .gps{white-space:nowrap}
+  .adjlist{display:flex;flex-wrap:wrap;gap:8px}
+  .adj{position:relative;width:86px}
+  .adj .th{width:86px;height:86px;border-radius:8px;border:1px solid var(--line);background:var(--bg) center/cover no-repeat;display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--muted);text-align:center;overflow:hidden}
+  .adj .nm{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .adj .x{position:absolute;top:-6px;right:-6px;width:24px;height:24px;border-radius:50%;border:0;background:var(--bad);color:#fff;font-weight:700;cursor:pointer;line-height:24px;padding:0}
+  .cropwrap{position:relative;touch-action:none;background:#555;border-radius:8px;overflow:hidden}
+  .cropwrap canvas{display:block;width:100%;height:auto}
+  .pdfout{display:grid;gap:8px;margin-top:10px}
+  .pdfout .row{display:flex;gap:8px}
+  .pdfout .row>*{flex:1}
   .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#14202b;color:#fff;padding:10px 16px;border-radius:10px;font-size:14px;z-index:20;max-width:90vw}
 </style>
 </head>
@@ -89,6 +111,7 @@
   <div class="chip"><span class="dot" id="syncDot"></span><span id="syncTxt">Cargando localidades…</span></div>
   <nav>
     <button data-tab="calc" class="on">Calcular</button>
+    <button data-tab="reg">Viáticos</button>
     <button data-tab="locs">Localidades</button>
     <button data-tab="cfg">Ajustes</button>
   </nav>
@@ -142,8 +165,46 @@
       <pre class="msg" id="msgPrev"></pre>
       <button class="btn ghost" id="btnCopy" type="button">Copiar mensaje</button>
     </details>
+    <button class="btn ghost" id="btnGuardarReg" type="button" style="margin-top:8px">📋 Guardar en Mis viáticos</button>
     <button class="lnk" id="btnClear" type="button">Borrar y empezar de nuevo</button>
-    <p class="note" style="margin:0">🔒 Tus horas no se guardan: viven solo en esta pantalla.</p>
+    <p class="note" style="margin:0">🔒 Tus horas no se guardan, salvo que las guardes en Mis viáticos (en tu Google Drive).</p>
+  </div>
+</section>
+
+<!-- ============ MIS VIÁTICOS ============ -->
+<section id="tab-reg" class="hide">
+  <div id="regOff" class="card">
+    <h2>Mis viáticos</h2>
+    <p class="note" style="font-size:14px">Guardá tus viáticos del mes con sus marcas de la intranet y comprobantes, y generá el PDF para enviar a fin de mes.</p>
+    <p class="note">Se guardan en una carpeta <b>Hora Salida</b> de tu propio Google Drive: nadie más los ve. Para calcular horarios no hace falta iniciar sesión.</p>
+    <button class="btn pri" id="regLogin" type="button">Iniciar sesión con Google</button>
+    <p class="hint bad" id="regLoginErr"></p>
+  </div>
+  <div id="regOn" class="hide">
+    <div class="card">
+      <div style="display:flex;align-items:center;gap:8px">
+        <div style="flex:1;min-width:0">
+          <div class="note" id="regCuenta" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></div>
+          <div class="note" id="regEstado"></div>
+        </div>
+        <button class="gps" id="regSync" type="button">Sincronizar</button>
+      </div>
+      <div class="f" style="margin:10px 0 0"><label for="regNombre">Nombre en la planilla</label><input id="regNombre" maxlength="60" placeholder="Nombre y apellido"></div>
+    </div>
+    <div class="card">
+      <div class="mesbar">
+        <button class="gps" id="mesPrev" type="button" aria-label="Mes anterior">‹</button>
+        <b id="mesTxt"></b>
+        <button class="gps" id="mesNext" type="button" aria-label="Mes siguiente">›</button>
+      </div>
+      <div id="regLista"></div>
+      <div class="btns" style="margin-top:10px">
+        <button class="btn ghost" id="regNuevo" type="button">＋ Nuevo viático</button>
+        <button class="btn pri" id="regPdf" type="button">Generar PDF del mes</button>
+      </div>
+      <div id="regPdfOut"></div>
+    </div>
+    <p class="note" style="text-align:center"><button class="lnk" id="regLogout" type="button" style="width:auto">Cerrar sesión de Google en esta app</button></p>
   </div>
 </section>
 
@@ -215,6 +276,71 @@
       <button class="btn ghost" type="button" id="dCancel">Cancelar</button>
     </div>
   </form>
+</dialog>
+
+<dialog id="dlgV" class="full">
+  <form id="vForm">
+    <h3 id="vTitle">Viático</h3>
+    <div class="seg" id="vTipo" style="grid-template-columns:1fr 1fr;margin-bottom:12px">
+      <button type="button" data-t="C100">C100<small>corto</small></button>
+      <button type="button" data-t="C200">C200<small>1 o más días</small></button>
+    </div>
+    <div class="f"><label for="vLoc">Localidad</label><input id="vLoc" list="dlLocNames" maxlength="40" required></div>
+    <div class="g2 f">
+      <div><label for="vFIni">Fecha comienzo</label><input id="vFIni" type="date" required></div>
+      <div><label for="vHIni">Hora comienzo</label><input id="vHIni" type="time"></div>
+    </div>
+    <div class="g2 f">
+      <div><label for="vFFin">Fecha finalización</label><input id="vFFin" type="date"></div>
+      <div><label for="vHFin">Hora finalización</label><input id="vHFin" type="time"></div>
+    </div>
+    <details id="vCalc" class="f">
+      <summary>Calcular las horas con las marcas</summary>
+      <div class="g2" style="margin-top:8px">
+        <div><label for="vCEntLoc">Ciudad entrada</label><select id="vCEntLoc"></select></div>
+        <div><label for="vCEnt">Marca de entrada</label><input id="vCEnt" type="time"></div>
+        <div><label for="vCSalLoc">Ciudad salida</label><select id="vCSalLoc"></select></div>
+        <div><label for="vCSal">Marca de salida</label><input id="vCSal" type="time"></div>
+      </div>
+      <div class="hint" id="vCalcHint">Hora comienzo = marca − viaje · Hora finalización = marca + viaje</div>
+    </details>
+    <div class="f"><label for="vLoco">Locomoción $</label><input id="vLoco" type="number" inputmode="decimal" min="0" step="1" value="0">
+      <div class="hint" id="vLocoHint"></div></div>
+
+    <div class="adjbox">
+      <div class="adjhead"><b>Marcas de la intranet</b><label class="gps">＋ PDF o captura<input id="vMarcaIn" type="file" accept="application/pdf,image/*" hidden></label></div>
+      <div id="vMarcas" class="adjlist"></div>
+    </div>
+    <div class="adjbox">
+      <div class="adjhead"><b>Comprobantes</b><label class="gps">＋ Agregar<input id="vCompIn" type="file" accept="application/pdf,image/*" multiple hidden></label></div>
+      <div id="vComps" class="adjlist"></div>
+      <div class="hint">Pasajes, boletas o tickets (foto o PDF).</div>
+    </div>
+    <div class="hint bad" id="vErr"></div>
+    <div class="btns" style="margin-top:10px">
+      <button class="btn pri" id="vSave" type="submit">Guardar</button>
+      <button class="btn ghost" id="vDel" type="button">Eliminar viático</button>
+      <button class="btn ghost" id="vCancel" type="button">Cancelar</button>
+    </div>
+  </form>
+</dialog>
+<datalist id="dlLocNames"></datalist>
+
+<dialog id="dlgCrop" class="full">
+  <div style="padding:12px">
+    <h3 style="margin:0 0 4px">Recortar marcas</h3>
+    <p class="note" style="margin:0 0 8px">Arrastrá los bordes del recuadro para dejar solo lo que va en la planilla.</p>
+    <div id="cropWrap" class="cropwrap"><canvas id="cropCv"></canvas></div>
+    <div class="mesbar" id="cropPages" style="margin:8px 0">
+      <button class="gps" id="cropPrev" type="button">‹ Página</button><span class="note" id="cropPg"></span><button class="gps" id="cropNext" type="button">Página ›</button>
+    </div>
+    <div class="hint" id="cropMsg"></div>
+    <div class="btns">
+      <button class="btn pri" id="cropAdd" type="button">Agregar este recorte</button>
+      <button class="btn ghost" id="cropAll" type="button">Usar la página entera</button>
+      <button class="btn ghost" id="cropDone" type="button">Listo</button>
+    </div>
+  </div>
 </dialog>
 
 <script>
@@ -425,7 +551,8 @@ function locate(){
 /* ---------- pestañas ---------- */
 document.querySelectorAll('nav button').forEach(b=>b.addEventListener('click',()=>{
   document.querySelectorAll('nav button').forEach(x=>x.classList.toggle('on',x===b));
-  ['calc','locs','cfg'].forEach(t=>$('tab-'+t).classList.toggle('hide',t!==b.dataset.tab));
+  ['calc','reg','locs','cfg'].forEach(t=>$('tab-'+t).classList.toggle('hide',t!==b.dataset.tab));
+  document.dispatchEvent(new CustomEvent('tab',{detail:b.dataset.tab}));
   window.scrollTo(0,0);
 }));
 
@@ -593,5 +720,6 @@ if('serviceWorker' in navigator && location.protocol==='https:' && /github\.io$/
 }
 loadLocs().then(()=>{ if(LS.get('hs_autogps',true)) locate(); });
 </script>
+<script src="viaticos.js"></script>
 </body>
 </html>
