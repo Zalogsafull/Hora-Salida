@@ -166,10 +166,9 @@
 
   <div class="card">
     <h2><span id="salTitle">Salida</span></h2>
-    <div class="g3">
+    <div class="g2">
       <div><label for="salDep">Departamento</label><select id="salDep"></select></div>
       <div><label for="salLoc">Ciudad</label><select id="salLoc"></select></div>
-      <div class="hr"><label for="marcaSal">Marca de salida</label><input id="marcaSal" type="time"></div>
     </div>
     <div class="hint" id="salHint"></div>
   </div>
@@ -191,7 +190,7 @@
       <pre class="msg" id="msgPrev"></pre>
       <button class="btn ghost" id="btnCopy" type="button">Copiar mensaje</button>
     </details>
-    <button class="btn ghost" id="btnGuardarReg" type="button" style="margin-top:8px">📋 Guardar en Mis viáticos</button>
+    <button class="btn ghost" id="btnGuardarReg" type="button" style="margin-top:8px">📋 Guardar viático</button>
     <button class="lnk" id="btnClear" type="button">Borrar y empezar de nuevo</button>
     <p class="note" style="margin:0">🔒 Tus horas no se guardan, salvo que las guardes en Mis viáticos (en tu Google Drive).</p>
   </div>
@@ -557,7 +556,6 @@ function buildMsg(r){
 
 /* ---------- eventos cálculo ---------- */
 $('marcaEnt').addEventListener('input', e=>{ P.marcaEnt=e.target.value; render(); });
-$('marcaSal').addEventListener('input', e=>{ P.marcaSal=e.target.value; render(); });
 $('tipoSeg').addEventListener('click', e=>{ const b=e.target.closest('button'); if(!b) return; tipo=b.dataset.t; LS.set('hs_tipo',tipo); render(); });
 $('btnCopy').addEventListener('click', async ()=>{
   try{ await navigator.clipboard.writeText($('msgPrev').textContent); toast('Mensaje copiado'); }
@@ -565,7 +563,7 @@ $('btnCopy').addEventListener('click', async ()=>{
 });
 $('btnClear').addEventListener('click', ()=>{
   P.ent=P.sal=null; P.marcaEnt=P.marcaSal=''; P.salTouched=false; P.salGps=false;
-  $('marcaEnt').value=$('marcaSal').value=''; $('entDep').value=$('salDep').value='';
+  $('marcaEnt').value=''; $('entDep').value=$('salDep').value='';
   syncSelects(); render(); toast('Datos borrados');
   if(LS.get('hs_autogps',true)) locate();
 });
@@ -757,6 +755,6 @@ if('serviceWorker' in navigator && location.protocol==='https:' && /github\.io$/
 }
 loadLocs().then(()=>{ if(LS.get('hs_autogps',true)) locate(); });
 </script>
-<script src="viaticos.js?v=14"></script>
+<script src="viaticos.js?v=15"></script>
 </body>
 </html>

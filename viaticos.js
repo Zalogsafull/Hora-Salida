@@ -320,7 +320,7 @@ function pintarInter(){
   $('vInterBox').classList.toggle('hide',!(c100&&on));
   $('vInterC200').classList.toggle('hide', c100 || !(R.ed.inter||[]).length);
   $('vInter').innerHTML = (R.ed.inter||[]).map((p,i)=>'<div class="irow" data-i="'+i+'"><label>'+(i+1)+'ª marca intermedia</label><div class="g2"><select class="idep" aria-label="Departamento"></select><select class="iloc" aria-label="Localidad"></select></div>'+
-    '<div class="g"><input class="if" type="date" min="'+esc($('vFIni').value)+'" max="'+esc($('vFFin').value||$('vFIni').value)+'" value="'+esc(p.f||'')+'"><input class="ih" type="time" value="'+esc(p.h||'')+'"><button type="button" class="x" aria-label="Quitar">×</button></div></div>').join('')
+    '<div class="g">'+selDia('if',p.f)+'<input class="ih" type="time" value="'+esc(p.h||'')+'"><button type="button" class="x" aria-label="Quitar">×</button></div></div>').join('')
     || '<p class="note" style="margin:0 0 8px">Todavía no hay marcas intermedias.</p>';
   $('vInter').querySelectorAll('.irow').forEach(row=>{
     const p=R.ed.inter[+row.dataset.i]; const sel=row.querySelector('.iloc');
@@ -436,7 +436,7 @@ function selDia(cls, f){
   const dias=diasRango(), val=ajustarDia(f,dias);
   return '<select class="'+cls+'" aria-label="Día">'+dias.map((d,i)=>'<option value="'+d+'"'+(d===val?' selected':'')+'>'+fDM(d)+' · día '+(i+1)+'</option>').join('')+'</select>';
 }
-function refrescarDias(){ leerLocos(); leerAlojs(); if(R.ed._lp) pintarLocos(); if(R.ed._ap) pintarAlojs(); }
+function refrescarDias(){ leerLocos(); leerAlojs(); leerInter(); if(R.ed._lp) pintarLocos(); if(R.ed._ap) pintarAlojs(); if(R.ed._ip) pintarInter(); }
 ['vFIni','vFFin'].forEach(id=>$(id).addEventListener('change',refrescarDias));
 function pintarLocos(){
   R.ed._lp=true;
