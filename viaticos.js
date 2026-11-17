@@ -36,6 +36,20 @@ const montoAloj = v => alojCuenta(v) ? (+v.aloj||0) : 0;
 const compsPDF = v => (v.adj||[]).filter(a => (claseDe(a)==='loco' && tieneLoco(v)) || (a.clase==='aloj' && alojCuenta(v)))
   .sort((a,b)=>(claseDe(a)==='loco'?0:1)-(claseDe(b)==='loco'?0:1));
 const pesos = n => '$'+(+n).toLocaleString('es-UY');
+// marcas intermedias: solo C100 (en C200 quedan guardadas pero no van a la planilla)
+const interCuenta = v => v.tipo==='C100' && !!v.tInter && (v.inter||[]).some(p=>p.h);
+function renglones(v){
+  const base=[v.localidad, fDMY(v.fIni), v.hIni, fDMY(v.fFin), v.hFin];
+  if(!interCuenta(v)) return [[...base, String(montoLoco(v)), String(montoAloj(v))]];
+  const pts=(v.inter||[]).filter(p=>p.h).sort((a,b)=>((a.f||'')+a.h).localeCompare((b.f||'')+b.h));
+  const nodos=[{loc:v.localidad,f:v.fIni,h:v.hIni}, ...pts.map(p=>({loc:p.loc||v.localidad,f:p.f||v.fIni,h:p.h})), {f:v.fFin,h:v.hFin}];
+  const out=[];
+  for(let i=0;i<nodos.length-1;i++){
+    const a=nodos[i], b=nodos[i+1];
+    out.push([a.loc, fDMY(a.f), a.h, fDMY(b.f), b.h, i===0?String(montoLoco(v)):'', i===0?String(montoAloj(v)):'']);
+  }
+  return out;
+}
 function guardarLocal(){ LS.set(K.datos, R.datos); }
 function viaticos(){ return Object.values(R.datos.v||{}); }
 function delMes(m){ return viaticos().filter(v=>(v.fIni||'').slice(0,7)===m).sort((a,b)=>(a.fIni+a.hIni).localeCompare(b.fIni+b.hIni)); }
@@ -193,7 +207,7 @@ function pintar(){
       const nm=0, nc=compsPDF(v).length;
       const fin = v.fFin&&v.hFin ? fDM(v.fFin)+' '+v.hFin : '<span class="open">sin terminar</span>';
       return '<div class="vit" data-id="'+esc(v.id)+'"><div class="t1">'+esc(v.localidad||'—')+'</div><div class="t2">'+fDM(v.fIni)+' '+esc(v.hIni||'--:--')+' → '+fin+
-        (nm||nc?' · '+(nm?'🕒'+nm+' ':'')+(nc?'🧾'+nc:''):'')+(montoLoco(v)?' · 🚌'+pesos(montoLoco(v)):'')+(montoAloj(v)?' · 🛏'+pesos(montoAloj(v)):'')+'</div></div>';
+        (nm||nc?' · '+(nm?'🕒'+nm+' ':'')+(nc?'🧾'+nc:''):'')+(interCuenta(v)?' · +'+(v.inter||[]).filter(p=>p.h).length+' marcas':'')+(montoLoco(v)?' · 🚌'+pesos(montoLoco(v)):'')+(montoAloj(v)?' · 🛏'+pesos(montoAloj(v)):'')+'</div></div>';
     }).join('');
   };
   pintarMarcasMes();
@@ -205,9 +219,35 @@ function opcionesLoc(sel, id){
   const deps=[...new Set(locs.map(l=>l.departamento))].sort(cmp);
   sel.innerHTML='<option value="">—</option>'+deps.map(d=>'<optgroup label="'+esc(d)+'">'+locs.filter(l=>l.departamento===d).sort((a,b)=>cmp(a.localidad,b.localidad)).map(l=>'<option value="'+esc(l.id)+'"'+(l.id===id?' selected':'')+'>'+esc(l.localidad)+'</option>').join('')+'</optgroup>').join('');
 }
+function pintarInter(){
+  R.ed._ip=true;
+  const c100=R.ed.tipo==='C100', on=$('vTInter').checked;
+  $('vInterChk').classList.toggle('hide',!c100);
+  $('vInterBox').classList.toggle('hide',!(c100&&on));
+  $('vInterC200').classList.toggle('hide', c100 || !(R.ed.inter||[]).length);
+  $('vInter').innerHTML = (R.ed.inter||[]).map((p,i)=>'<div class="irow" data-i="'+i+'"><label>'+(i+1)+'ª marca intermedia</label><select class="iloc"></select>'+
+    '<div class="g"><input class="if" type="date" value="'+esc(p.f||'')+'"><input class="ih" type="time" value="'+esc(p.h||'')+'"><button type="button" class="x" aria-label="Quitar">×</button></div></div>').join('')
+    || '<p class="note" style="margin:0 0 8px">Todavía no hay marcas intermedias.</p>';
+  $('vInter').querySelectorAll('.irow').forEach(row=>{
+    const p=R.ed.inter[+row.dataset.i]; const sel=row.querySelector('.iloc');
+    const l=locs.find(x=>norm(corto(x.localidad))===norm(p.loc||'')); opcionesLoc(sel, l?l.id:'');
+    if(p.loc && !l){ sel.insertAdjacentHTML('afterbegin','<option value="otra:'+esc(p.loc)+'" selected>'+esc(p.loc)+'</option>'); }
+  });
+}
+function leerInter(){
+  if(!R.ed._ip) return;
+  R.ed.inter=[...$('vInter').querySelectorAll('.irow')].map(row=>{
+    const v=row.querySelector('.iloc').value; const l=v&&!v.startsWith('otra:')?byId(v):null;
+    return {loc: l?corto(l.localidad):(v.startsWith('otra:')?v.slice(5):''), f:row.querySelector('.if').value, h:row.querySelector('.ih').value};
+  });
+}
+$('vTInter').addEventListener('change',()=>{ leerInter(); if($('vTInter').checked && !(R.ed.inter||[]).length) R.ed.inter=[{loc:locDeSel(), f:$('vFIni').value, h:''}]; pintarInter(); });
+$('vInterAdd').addEventListener('click',()=>{ leerInter(); const u=R.ed.inter[R.ed.inter.length-1]; R.ed.inter.push({loc:u?u.loc:locDeSel(), f:u?u.f:$('vFIni').value, h:''}); pintarInter(); });
+$('vInter').addEventListener('click',e=>{ const x=e.target.closest('.x'); if(!x) return; leerInter(); R.ed.inter.splice(+x.closest('.irow').dataset.i,1); pintarInter(); });
 function pintarTipo(){
   document.querySelectorAll('#vTipo button').forEach(b=>b.classList.toggle('on',b.dataset.t===R.ed.tipo));
   $('vAlojC200').classList.toggle('hide', R.ed.tipo!=='C200');
+  if($('vInter')) { leerInter(); pintarInter(); }
 }
 function pintarAdj(){
   const item=a=>'<div class="adj" data-a="'+esc(a.id)+'"><div class="th" id="th_'+esc(a.id)+'">'+(a.mime==='application/pdf'?'PDF':'…')+'</div><div class="nm">'+esc(a.nombre||'')+'</div><button type="button" class="x" data-x="'+esc(a.id)+'" aria-label="Quitar">×</button></div>';
@@ -227,6 +267,7 @@ function abrirEditor(v){
   ponerLocalidad(R.ed.localidad||'');
   $('vFIni').value=R.ed.fIni||''; $('vHIni').value=R.ed.hIni||''; $('vFFin').value=R.ed.fFin||''; $('vHFin').value=R.ed.hFin||'';
   $('vLoco').value = R.ed.loco||0; $('vAloj').value = R.ed.aloj||0;
+  R.ed.inter=R.ed.inter||[]; $('vTInter').checked=!!R.ed.tInter; $('vInter').innerHTML='';
   $('vTLoco').checked = tieneLoco(R.ed); $('vTAloj').checked = !!R.ed.tAloj; checks();
   opcionesLoc($('vCEntLoc'), R.ed.cEntLoc||''); opcionesLoc($('vCSalLoc'), R.ed.cSalLoc||'');
   $('vCEnt').value=R.ed.cEnt||''; $('vCSal').value=R.ed.cSal||'';
@@ -254,6 +295,7 @@ function ponerLocalidad(nombre){
 $('vLocDep').addEventListener('change',e=>pintarLocSel(e.target.value,''));
 function leerEditor(){
   Object.assign(R.ed,{localidad:locDeSel(), fIni:$('vFIni').value, hIni:$('vHIni').value, fFin:$('vFFin').value, hFin:$('vHFin').value,
+    tInter:$('vTInter').checked, inter:(leerInter(), R.ed.inter.filter(p=>p.h||p.loc)),
     tLoco:$('vTLoco').checked, tAloj:$('vTAloj').checked,
     loco: Math.max(0, Math.round(+$('vLoco').value||0)), aloj: Math.max(0, Math.round(+$('vAloj').value||0)),
     cEntLoc:$('vCEntLoc').value, cSalLoc:$('vCSalLoc').value, cEnt:$('vCEnt').value, cSal:$('vCSal').value});
@@ -287,7 +329,7 @@ $('vForm').addEventListener('submit',e=>{
   if(v.fFin && v.fFin<v.fIni){ $('vErr').textContent='La fecha de finalización es anterior al comienzo.'; return; }
   (v._quitados||[]).filter(a=>!(v._subidos||[]).includes(a)).forEach(a=>borrarDrive(a.drive));
   (v._quitados||[]).filter(a=>(v._subidos||[]).includes(a)).forEach(a=>borrarDrive(a.drive));
-  const limpio={...v, t:Date.now(), adj:(v.adj||[]).map(({_blob,...a})=>a)}; delete limpio._nuevo; delete limpio._subidos; delete limpio._quitados;
+  const limpio={...v, t:Date.now(), adj:(v.adj||[]).map(({_blob,...a})=>a)}; delete limpio._nuevo; delete limpio._ip; delete limpio._subidos; delete limpio._quitados;
   R.datos.v[v.id]=limpio; R.mes=v.fIni.slice(0,7);
   $('dlgV').close(); cambio(); toast('Viático guardado');
 });
@@ -372,7 +414,8 @@ async function bloque(pdf, tipo, lista, F){
   const nombre=R.datos.nombre||'';
   /* --- 1) planilla --- */
   const filasPorHoja=28;
-  for(let ini=0; ini===0 || ini<lista.length; ini+=filasPorHoja){
+  const todas=lista.flatMap(renglones);
+  for(let ini=0; ini===0 || ini<todas.length; ini+=filasPorHoja){
     const pg=pdf.addPage(A4), H=A4[1];
     const Y=y=>H-y; // coordenadas desde arriba, como en la planilla original
     pg.drawText('planillas viáticos',{x:167,y:Y(57),size:9.5,font:F.bi});
@@ -387,16 +430,15 @@ async function bloque(pdf, tipo, lista, F){
     box(cols[0],95,cols[7],128,.9);
     for(let c=1;c<7;c++) pg.drawLine({start:{x:cols[c],y:Y(95)},end:{x:cols[c],y:Y(128)},thickness:.7,color:negro});
     cab.forEach((t,c)=>{ centro(t[0],cols[c],cols[c+1],107,9,F.b); centro(t[1],cols[c],cols[c+1],124,9,F.b); });
-    const filas=lista.slice(ini,ini+filasPorHoja), nFilas=Math.max(10, filas.length);
+    const filas=todas.slice(ini,ini+filasPorHoja), nFilas=Math.max(10, filas.length);
     for(let i=0;i<nFilas;i++){
       const y1=168+i*25.6, y2=y1+14;
       box(cols[0],y1,cols[7],y2,.7);
       for(let c=1;c<7;c++) pg.drawLine({start:{x:cols[c],y:Y(y1)},end:{x:cols[c],y:Y(y2)},thickness:.7,color:negro});
-      const v=filas[i]; if(!v) continue;
-      const vals=[v.localidad, fDMY(v.fIni), v.hIni, fDMY(v.fFin), v.hFin, String(montoLoco(v)), String(montoAloj(v))];
+      const vals=filas[i]; if(!vals) continue;
       vals.forEach((s,c)=>centro(s||'',cols[c],cols[c+1],y2-3.5,c>=5?7.5:8.5,F.r));
     }
-    if(lista.length<=filasPorHoja) break;
+    if(todas.length<=filasPorHoja) break;
   }
   /* --- 2) marcas de la intranet --- */
   const M=36, ancho=A4[0]-2*M;
