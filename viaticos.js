@@ -278,6 +278,7 @@ function problemas(v, todos){
   const fin=v.fFin||v.fIni;
   const choca=(todos||[]).find(o=>o.id!==v.id && o.fIni && o.fIni<=fin && (o.fFin||o.fIni)>=v.fIni);
   if(choca) p.push('Se superpone con '+(choca.localidad||'otro viático')+' del '+fDM(choca.fIni));
+  for(const x of (R.chk||{})[v.id]||[]) p.push('Intranet: '+x);
   return p;
 }
 
@@ -593,6 +594,13 @@ async function ocrWorker(){
   OCR.worker.catch(()=>{ OCR.worker=null; });
   return OCR.worker;
 }
+// el OCR a veces pierde los dos puntos ("1430") o los lee como punto ("00.01")
+function normHora(t){
+  let x=String(t||'').trim().replace(/[.,;]/,':');
+  if(/^\d{3,4}$/.test(x)){ x=x.padStart(4,'0'); x=x.slice(0,2)+':'+x.slice(2); }
+  const m=/^(\d{1,3}):(\d{2})$/.exec(x); if(!m || +m[2]>59) return null;
+  return m[1].padStart(2,'0')+':'+m[2];
+}
 const isoDe = t => { const m=/(\d{2})[\/\-.](\d{2})[\/\-.](\d{4})/.exec(t||''); return m ? m[3]+'-'+m[2]+'-'+m[1] : null; };
 async function analizarPagina(cv, w){
   const {data}=await w.recognize(cv,{},{blocks:true});
@@ -605,14 +613,17 @@ async function analizarPagina(cv, w){
   const xmin=Math.min(...fechas.map(x=>x.x0)); fechas=fechas.filter(x=>x.x0<xmin+40).sort((a,b)=>a.y0-b.y0);
   const cab = titulo ? ws.find(x=>/^Fecha$/i.test(x.t) && x.y0>titulo.y1 && x.y1<fechas[0].y0) : null;
   const colHoras = titulo ? ws.find(x=>/^Horas$/i.test(x.t) && x.y0>titulo.y1 && x.y1<fechas[0].y0) : null;
+  const enCab = re => titulo ? ws.filter(x=>re.test(x.t) && x.y0>titulo.y1 && x.y1<fechas[0].y0).sort((a,b)=>a.x0-b.x0)[0] : null;
+  const colEnt=enCab(/^Entrada$/i), colSal=enCab(/^Salida$/i);
   const cs=fechas.map(x=>(x.y0+x.y1)/2), dif=[]; for(let i=1;i<cs.length;i++) dif.push(cs[i]-cs[i-1]);
   dif.sort((a,b)=>a-b);
   const paso = dif.length ? dif[Math.floor(dif.length/2)] : (cab ? (cs[0]-(cab.y0+cab.y1)/2) : 60);
   const filas=fechas.map((x,i)=>{
     const yc=cs[i], y0=yc-paso/2, y1=yc+paso/2;
     let horas=null;
-    if(colHoras){ const hc=(colHoras.x0+colHoras.x1)/2; const h=ws.find(z=>z.y0>y0 && z.y1<y1 && Math.abs((z.x0+z.x1)/2-hc)<45 && /^\d{1,3}:\d{2}$/.test(z.t)); if(h) horas=h.t; }
-    return {f:isoDe(x.t), y0:Math.max(0,y0), y1:Math.min(cv.height,y1), horas};
+    if(colHoras){ const hc=(colHoras.x0+colHoras.x1)/2; const h=ws.find(z=>z.y0>y0 && z.y1<y1 && Math.abs((z.x0+z.x1)/2-hc)<45 && normHora(z.t)); if(h) horas=normHora(h.t); }
+    const hora = col => { if(!col) return null; const c=(col.x0+col.x1)/2; const h=ws.find(z=>z.y0>y0 && z.y1<y1 && Math.abs((z.x0+z.x1)/2-c)<45 && normHora(z.t) && toMin(normHora(z.t))!=null && +normHora(z.t).slice(0,2)<24); return h?normHora(h.t):null; };
+    return {f:isoDe(x.t), y0:Math.max(0,y0), y1:Math.min(cv.height,y1), horas, ent:hora(colEnt), sal:hora(colSal)};
   });
   const enTabla=ws.filter(z=>z.y0>=(titulo?titulo.y0:filas[0].y0) && z.y1<=filas[filas.length-1].y1);
   const x0=Math.max(0, Math.min(...enTabla.map(z=>z.x0))-28), x1=Math.min(cv.width, Math.max(...enTabla.map(z=>z.x1))+28);
@@ -667,6 +678,44 @@ async function imagenMarcasViatico(v){
   for(const {p,f} of filas){ const h=f.y1-f.y0; c.drawImage(p.cv, p.x0, f.y0, W, h, 0, y, W, h); y+=h; }
   return {cv, fw: W/base.cv.width, n:filas.length};
 }
+/* --- control: marcas cargadas en los viáticos vs. marcas de la intranet --- */
+const TOL_MIN = 10; // diferencia tolerada (redondeos de pocos minutos)
+async function marcasIntranet(v){
+  const out=[];
+  for(const m of mesesDe(v)){ const x=(R.datos.marcasMes||{})[m]; if(x && x.drive) for(const p of await analizarMarcas(x.drive)) out.push(...p.filas); }
+  return out;
+}
+function difMin(a,b){ const x=toMin(a), y=toMin(b); return x==null||y==null ? null : Math.abs(x-y); }
+async function chequearViatico(v){
+  const meses=mesesDe(v).filter(m=>((R.datos.marcasMes||{})[m]||{}).drive);
+  if(!meses.length) return null;           // sin PDF de marcas: no se controla
+  const filas=await marcasIntranet(v), del=f=>filas.filter(r=>r.f===f).sort((a,b)=>(a.ent||'').localeCompare(b.ent||''));
+  const w=[];
+  if(v.cEnt && v.fIni){
+    const d=del(v.fIni);
+    if(!d.length) w.push('no hay marcas el '+fDM(v.fIni)+' (cargaste entrada '+v.cEnt+')');
+    else if(d[0].ent){ const x=difMin(v.cEnt,d[0].ent); if(x>TOL_MIN) w.push('entrada del '+fDM(v.fIni)+': cargaste '+v.cEnt+', la intranet dice '+d[0].ent+' ('+x+' min)'); }
+  }
+  if(v.cSal && v.fFin){
+    const d=del(v.fFin), ult=d.filter(r=>r.sal).pop();
+    if(!d.length) w.push('no hay marcas el '+fDM(v.fFin)+' (cargaste salida '+v.cSal+')');
+    else if(ult){ const x=difMin(v.cSal,ult.sal); if(x>TOL_MIN) w.push('salida del '+fDM(v.fFin)+': cargaste '+v.cSal+', la intranet dice '+ult.sal+' ('+x+' min)'); }
+  }
+  if(v.tipo==='C100' && v.tInter) for(const p of (v.inter||[]).filter(p=>p.h)){
+    const d=del(p.f||v.fIni), hs=d.flatMap(r=>[r.ent,r.sal]).filter(Boolean);
+    if(!d.length){ w.push('no hay marcas el '+fDM(p.f||v.fIni)+' (marca intermedia '+p.h+')'); continue; }
+    const x=Math.min(...hs.map(h=>difMin(p.h,h)));
+    if(hs.length && x>TOL_MIN) w.push('marca intermedia '+p.h+' del '+fDM(p.f||v.fIni)+' no coincide con la intranet ('+hs.join(', ')+')');
+  }
+  return w;
+}
+let _chkFirma='';
+async function chequearMes(){
+  const lista=delMes(R.mes); const nuevo={};
+  for(const v of lista){ try{ const w=await chequearViatico(v); if(w&&w.length) nuevo[v.id]=w; }catch(e){} }
+  const firma=JSON.stringify(nuevo);
+  if(firma!==_chkFirma){ _chkFirma=firma; R.chk={...(R.chk||{}), ...nuevo}; lista.forEach(v=>{ if(!nuevo[v.id]) delete R.chk[v.id]; }); pintar(); }
+}
 async function estadoMarcasMes(){
   const m=(R.datos.marcasMes||{})[R.mes], el=$('mesMarcasInfo'); if(!el) return;
   if(!m || !m.drive){ el.textContent=''; return; }
@@ -675,6 +724,7 @@ async function estadoMarcasMes(){
     const pags=await analizarMarcas(m.drive), dias=[...new Set(pags.flatMap(p=>p.filas.map(f=>f.f)))].sort();
     if((R.datos.marcasMes||{})[R.mes]!==m) return;
     el.textContent = dias.length ? dias.length+' día(s) con marcas: '+dias.map(d=>d.slice(8,10)).join(', ') : 'No se encontraron marcas en el PDF. ¿Es la impresión de "Marcas SAP"?';
+    if(dias.length) chequearMes();
   }catch(e){ el.textContent='No se pudo leer el PDF de marcas.'; }
 }
 
@@ -798,6 +848,8 @@ async function generarPDF(){
   try{
     const lista=delMes(R.mes), c100=lista.filter(v=>v.tipo==='C100'), c200=lista.filter(v=>v.tipo==='C200');
     if(!lista.length){ out.innerHTML='<p class="note">No hay viáticos en '+mesNombre(R.mes)+'.</p>'; return; }
+    await chequearMes().catch(()=>{});
+    const difs=lista.filter(v=>(R.chk||{})[v.id]).map(v=>'<li><b>'+esc(v.localidad||'')+' '+fDM(v.fIni)+'</b>: '+R.chk[v.id].map(esc).join('; ')+'</li>').join('');
     const sinTerminar=lista.filter(v=>problemas(v,viaticos()).length).length;
     if(lista.some(v=>(v.adj||[]).length)) await asegurarToken().catch(()=>{});
     const mm=R.mes.slice(5,7)+'-'+R.mes.slice(2,4), res=[];
@@ -811,7 +863,7 @@ async function generarPDF(){
       await bloque(pdf,'C200',c200,F);
       res.push({nombre:'Planilla_VIÁTICOS_'+mm+'.pdf', bytes:await pdf.save(), desc: c100.length?'C100 + C200':'C200'});
     }
-    out.innerHTML='<div class="pdfout">'+(sinTerminar?'<p class="hint bad" style="margin:0">Ojo: '+sinTerminar+' viático(s) marcados para revisar en la lista.</p>':'')+res.map((r,i)=>{
+    out.innerHTML='<div class="pdfout">'+(sinTerminar?'<p class="hint bad" style="margin:0">Ojo: '+sinTerminar+' viático(s) marcados para revisar en la lista.</p>'+(difs?'<div class="revbox" style="margin:0"><b>Diferencias con las marcas de la intranet (más de '+TOL_MIN+' min):</b><ul class="probs">'+difs+'</ul></div>':''):'')+res.map((r,i)=>{
       const url=URL.createObjectURL(new Blob([r.bytes],{type:'application/pdf'}));
       return '<div><div class="note" style="margin-bottom:4px"><b>'+esc(r.desc)+'</b> · '+esc(r.nombre)+'</div><div class="row">'+
         '<button class="btn pri" type="button" data-ver="'+i+'">Ver</button>'+
