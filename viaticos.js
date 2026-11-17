@@ -32,10 +32,14 @@ const enWeb = () => location.protocol==='https:' || location.hostname==='localho
 const claseDe = a => a.clase==='comp' ? 'loco' : a.clase;
 const tieneLoco = v => v.tLoco!=null ? !!v.tLoco : (+v.loco>0 || (v.adj||[]).some(a=>a.clase==='comp'));
 const alojCuenta = v => v.tipo==='C100' && !!v.tAloj;
-const montoLoco = v => tieneLoco(v) ? (+v.loco||0) : 0;
+// locomociones: lista de {id, tramo:'ida'|'vuelta', f, monto}; las viejas (un solo monto) cuentan como ida
+const locosDe = v => Array.isArray(v.locos) ? v.locos : ((+v.loco>0 || (v.adj||[]).some(a=>claseDe(a)==='loco')) ? [{id:'l0', tramo:'ida', f:v.fIni, monto:+v.loco||0}] : []);
+const sumaLoco = (v,tr) => tieneLoco(v) ? locosDe(v).filter(l=>!tr || (tr==='vuelta') === (l.tramo==='vuelta')).reduce((s,l)=>s+(+l.monto||0),0) : 0;
+const montoLoco = v => sumaLoco(v);
 const montoAloj = v => alojCuenta(v) ? (+v.aloj||0) : 0;
+const ordenAdj = (v,a) => { if(claseDe(a)!=='loco') return 1000; const ls=locosDe(v); const i=ls.findIndex(l=>l.id===a.item); const l=ls[i]; return (l&&l.tramo==='vuelta'?500:0)+(i<0?0:i); };
 const compsPDF = v => (v.adj||[]).filter(a => (claseDe(a)==='loco' && tieneLoco(v)) || (a.clase==='aloj' && alojCuenta(v)))
-  .sort((a,b)=>(claseDe(a)==='loco'?0:1)-(claseDe(b)==='loco'?0:1));
+  .sort((a,b)=>ordenAdj(v,a)-ordenAdj(v,b));
 const pesos = n => '$'+(+n).toLocaleString('es-UY');
 // marcas intermedias: solo C100 (en C200 quedan guardadas pero no van a la planilla)
 const interCuenta = v => v.tipo==='C100' && !!v.tInter && (v.inter||[]).some(p=>p.h);
@@ -47,7 +51,9 @@ function renglones(v){
   const out=[];
   for(let i=0;i<nodos.length-1;i++){
     const a=nodos[i], b=nodos[i+1];
-    out.push([a.loc, fDMY(a.f), a.h, fDMY(b.f), b.h, i===0?String(montoLoco(v)):'', i===0?String(montoAloj(v)):'']);
+    const ult=i===nodos.length-2, vta=sumaLoco(v,'vuelta');
+    const lc = i===0 ? String(sumaLoco(v,'ida')) : (ult && vta ? String(vta) : '');
+    out.push([a.loc, fDMY(a.f), a.h, fDMY(b.f), b.h, lc, i===0?String(montoAloj(v)):'']);
   }
   return out;
 }
@@ -277,7 +283,7 @@ function pintarTipo(){
 function pintarAdj(){
   const item=a=>'<div class="adj" data-a="'+esc(a.id)+'"><div class="th" id="th_'+esc(a.id)+'">'+(a.mime==='application/pdf'?'PDF':'…')+'</div><div class="nm">'+esc(a.nombre||'')+'</div><button type="button" class="x" data-x="'+esc(a.id)+'" aria-label="Quitar">×</button></div>';
   const adj=R.ed.adj||[];
-  $('vLocoAdj').innerHTML = adj.filter(a=>claseDe(a)==='loco').map(item).join('') || '<span class="note">Sin comprobantes.</span>';
+  document.querySelectorAll('#vLocos [data-lc]').forEach(el=>{ const id=el.dataset.lc; el.innerHTML = adj.filter(a=>claseDe(a)==='loco' && a.item===id).map(item).join('') || '<span class="note">Sin comprobante.</span>'; });
   $('vAlojAdj').innerHTML = adj.filter(a=>a.clase==='aloj').map(item).join('') || '<span class="note">Sin comprobantes.</span>';
   adj.forEach(async a=>{
     if(a.mime==='application/pdf') return;
@@ -291,9 +297,11 @@ function abrirEditor(v){
   $('vTitle').textContent = nuevo ? 'Nuevo viático' : 'Editar viático';
   ponerLocalidad(R.ed.localidad||'');
   $('vFIni').value=R.ed.fIni||''; $('vHIni').value=R.ed.hIni||''; $('vFFin').value=R.ed.fFin||''; $('vHFin').value=R.ed.hFin||'';
-  $('vLoco').value = R.ed.loco||0; $('vAloj').value = R.ed.aloj||0;
+  $('vAloj').value = R.ed.aloj||0;
+  R.ed.locos = JSON.parse(JSON.stringify(locosDe(R.ed))); R.ed._lp=false;
+  (R.ed.adj||[]).forEach(a=>{ if(claseDe(a)==='loco' && !R.ed.locos.some(l=>l.id===a.item)){ if(!R.ed.locos.length) R.ed.locos.push({id:uid(),tramo:'ida',f:R.ed.fIni,monto:0}); a.item=R.ed.locos[0].id; a.clase='loco'; } });
   R.ed.inter=R.ed.inter||[]; $('vTInter').checked=!!R.ed.tInter; $('vInter').innerHTML='';
-  $('vTLoco').checked = tieneLoco(R.ed); $('vTAloj').checked = !!R.ed.tAloj; checks();
+  $('vTLoco').checked = tieneLoco(R.ed); $('vTAloj').checked = !!R.ed.tAloj; checks(); pintarLocos();
   opcionesLoc($('vCSalLoc'), R.ed.cSalLoc || ($('vLocSel').value.startsWith('otra:')?'':$('vLocSel').value));
   $('vCEnt').value=R.ed.cEnt||''; $('vCSal').value=R.ed.cSal||''; _entAnt=$('vLocSel').value;
   // horas cargadas antes sin marca: se conservan hasta que se cargue la marca
@@ -328,7 +336,8 @@ function leerEditor(){
   Object.assign(R.ed,{localidad:locDeSel(), fIni:$('vFIni').value, hIni:$('vHIni').value, fFin:$('vFFin').value, hFin:$('vHFin').value,
     tInter:$('vTInter').checked, inter:(leerInter(), R.ed.inter.filter(p=>p.h||p.loc)),
     tLoco:$('vTLoco').checked, tAloj:$('vTAloj').checked,
-    loco: Math.max(0, Math.round(+$('vLoco').value||0)), aloj: Math.max(0, Math.round(+$('vAloj').value||0)),
+    locos:(leerLocos(), R.ed.locos.map(l=>({id:l.id, tramo:l.tramo, f:l.f, monto:Math.max(0,Math.round(+l.monto||0))}))),
+    aloj: Math.max(0, Math.round(+$('vAloj').value||0)),
     cEntLoc:$('vLocSel').value, cSalLoc:$('vCSalLoc').value, cEnt:$('vCEnt').value, cSal:$('vCSal').value});
 }
 function calcEditor(){
@@ -346,9 +355,32 @@ function calcEditor(){
 ['vLocSel','vCSalLoc','vCEnt','vCSal'].forEach(id=>{ $(id).addEventListener('input',calcEditor); $(id).addEventListener('change',calcEditor); });
 
 $('vTipo').addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b) return; R.ed.tipo=b.dataset.t; pintarTipo(); });
+function pintarLocos(){
+  R.ed._lp=true;
+  $('vLocos').innerHTML = R.ed.locos.map((l,i)=>'<div class="lrow" data-l="'+esc(l.id)+'"><label>Locomoción '+(i+1)+'</label>'+
+    '<div class="seg"><button type="button" data-tr="ida"'+(l.tramo!=='vuelta'?' class="on"':'')+'>Ida</button><button type="button" data-tr="vuelta"'+(l.tramo==='vuelta'?' class="on"':'')+'>Vuelta</button></div>'+
+    '<div class="g"><input class="lf" type="date" value="'+esc(l.f||'')+'" aria-label="Día"><input class="lm" type="number" inputmode="decimal" min="0" step="1" placeholder="Monto $" value="'+(+l.monto||'')+'" aria-label="Monto"><button type="button" class="lx" aria-label="Quitar">×</button></div>'+
+    '<div class="adjhead"><span class="note">Comprobante</span><label class="gps">＋ Agregar<input class="lin" type="file" accept="application/pdf,image/*" multiple hidden></label></div>'+
+    '<div class="adjlist" data-lc="'+esc(l.id)+'"></div></div>').join('') || '<p class="note" style="margin:0 0 8px">Sin locomociones.</p>';
+  pintarAdj();
+}
+function leerLocos(){
+  if(!R.ed._lp) return;
+  R.ed.locos=[...$('vLocos').querySelectorAll('.lrow')].map(r=>({id:r.dataset.l, tramo:r.querySelector('[data-tr].on')?.dataset.tr||'ida', f:r.querySelector('.lf').value, monto:r.querySelector('.lm').value}));
+}
+function nuevaLoco(){ leerLocos(); const n=R.ed.locos.length; R.ed.locos.push({id:uid(), tramo:n?'vuelta':'ida', f:n?($('vFFin').value||$('vFIni').value):$('vFIni').value, monto:''}); pintarLocos(); }
+$('vLocoAdd').addEventListener('click',nuevaLoco);
+$('vLocos').addEventListener('click',e=>{
+  const tr=e.target.closest('[data-tr]');
+  if(tr){ tr.parentNode.querySelectorAll('button').forEach(b=>b.classList.toggle('on',b===tr)); return; }
+  const lx=e.target.closest('.lx');
+  if(lx){ leerLocos(); const id=lx.closest('.lrow').dataset.l; R.ed.adj.filter(a=>a.item===id).forEach(a=>R.ed._quitados.push(a)); R.ed.adj=R.ed.adj.filter(a=>a.item!==id); R.ed.locos=R.ed.locos.filter(l=>l.id!==id); pintarLocos(); return; }
+  quitarAdj(e);
+});
+$('vLocos').addEventListener('change',e=>{ if(e.target.classList.contains('lin')){ const f=[...e.target.files]; e.target.value=''; leerLocos(); subirComps(f,'loco',e.target.closest('.lrow').dataset.l); } });
 function checks(){ $('vLocoBox').classList.toggle('hide',!$('vTLoco').checked); $('vAlojBox').classList.toggle('hide',!$('vTAloj').checked); }
-$('vTLoco').addEventListener('change',checks); $('vTAloj').addEventListener('change',checks);
-['vLocoAdj','vAlojAdj'].forEach(id=>$(id).addEventListener('click',quitarAdj));
+$('vTLoco').addEventListener('change',()=>{ checks(); if($('vTLoco').checked && !R.ed.locos.length) nuevaLoco(); }); $('vTAloj').addEventListener('change',checks);
+['vAlojAdj'].forEach(id=>$(id).addEventListener('click',quitarAdj));
 function quitarAdj(e){
   const x=e.target.closest('[data-x]'); if(!x) return;
   const a=R.ed.adj.find(a=>a.id===x.dataset.x); if(!a) return;
@@ -366,7 +398,7 @@ $('vForm').addEventListener('submit',e=>{
   if(v.fFin && v.fFin<v.fIni){ $('vErr').textContent='La fecha de finalización es anterior al comienzo.'; return; }
   (v._quitados||[]).filter(a=>!(v._subidos||[]).includes(a)).forEach(a=>borrarDrive(a.drive));
   (v._quitados||[]).filter(a=>(v._subidos||[]).includes(a)).forEach(a=>borrarDrive(a.drive));
-  const limpio={...v, t:Date.now(), adj:(v.adj||[]).map(({_blob,...a})=>a)}; delete limpio._nuevo; delete limpio._ip; delete limpio._legIni; delete limpio._legFin; delete limpio._subidos; delete limpio._quitados;
+  const limpio={...v, t:Date.now(), adj:(v.adj||[]).map(({_blob,...a})=>a)}; delete limpio._nuevo; delete limpio._ip; delete limpio._lp; delete limpio.loco; delete limpio._legIni; delete limpio._legFin; delete limpio._subidos; delete limpio._quitados;
   R.datos.v[v.id]=limpio; R.mes=v.fIni.slice(0,7);
   $('dlgV').close(); cambio(); toast('Viático guardado');
 });
@@ -402,17 +434,17 @@ async function agregarAdj(blob, nombre, mime, clase, extra){
   a._blob=blob; R.ed.adj.push(a); R.ed._subidos.push(a); pintarAdj();
   return a;
 }
-async function subirComps(files, clase){
+async function subirComps(files, clase, item){
   for(const f of files){
     $('vErr').textContent='Subiendo '+f.name+'…';
     try{
-      if(f.type==='application/pdf') await agregarAdj(f, f.name, 'application/pdf', clase);
-      else { const j=await aJpeg(f); await agregarAdj(j, (f.name||'comprobante').replace(/\.[^.]+$/,'')+'.jpg', 'image/jpeg', clase); }
+      const ex=item?{item}:null;
+      if(f.type==='application/pdf') await agregarAdj(f, f.name, 'application/pdf', clase, ex);
+      else { const j=await aJpeg(f); await agregarAdj(j, (f.name||'comprobante').replace(/\.[^.]+$/,'')+'.jpg', 'image/jpeg', clase, ex); }
       $('vErr').textContent='';
     }catch(err){ $('vErr').textContent='No se pudo subir '+f.name+(err&&err.code==='token'?': renová el permiso de Google.':'.'); }
   }
 }
-$('vLocoIn').addEventListener('change', e=>{ const f=[...e.target.files]; e.target.value=''; subirComps(f,'loco'); });
 $('vAlojIn').addEventListener('change', e=>{ const f=[...e.target.files]; e.target.value=''; subirComps(f,'aloj'); });
 /* ---------------- PDF de marcas del mes ---------------- */
 let _pdfjs=null;

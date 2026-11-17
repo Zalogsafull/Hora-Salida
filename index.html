@@ -88,6 +88,11 @@
   .vgrp{font-size:12px;font-weight:800;letter-spacing:.06em;color:var(--muted);margin:14px 2px 6px;display:flex;justify-content:space-between}
   .vit{background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:10px 34px 10px 12px;margin-bottom:6px;cursor:pointer;position:relative}
   .vit::after{content:'✎';position:absolute;right:12px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:17px}
+  .lrow{border-bottom:1px dashed var(--line);padding:0 0 10px;margin:0 0 10px}
+  .lrow .seg{grid-template-columns:1fr 1fr;margin-bottom:6px}
+  .lrow .seg button{padding:7px 4px}
+  .lrow .g{display:grid;grid-template-columns:1fr 1fr 34px;gap:6px;margin-bottom:6px}
+  .lrow .lx{border:0;background:transparent;color:var(--bad);font-size:22px;cursor:pointer}
   .irow{border-bottom:1px dashed var(--line);padding:0 0 8px;margin:0 0 8px}
   .irow .g{display:grid;grid-template-columns:1fr 1fr 34px;gap:6px;margin-top:6px}
   .irow .x{border:0;background:transparent;color:var(--bad);font-size:22px;cursor:pointer}
@@ -330,10 +335,9 @@
     <div class="hint" id="vCalcHint" style="margin:-4px 0 10px"></div>
     <label class="chk"><input type="checkbox" id="vTLoco"> Tiene locomoción</label>
     <div class="adjbox hide" id="vLocoBox">
-      <div class="f"><label for="vLoco">Monto locomoción $</label><input id="vLoco" type="number" inputmode="decimal" min="0" step="1" value="0"></div>
-      <div class="adjhead"><b>Comprobantes</b><label class="gps">＋ Agregar<input id="vLocoIn" type="file" accept="application/pdf,image/*" multiple hidden></label></div>
-      <div id="vLocoAdj" class="adjlist"></div>
-      <div class="hint">Pasajes, boletos (foto o PDF).</div>
+      <div class="hint" style="margin:0 0 8px">La de ida va en el primer renglón de la planilla y la de vuelta en el último.</div>
+      <div id="vLocos"></div>
+      <button class="gps" type="button" id="vLocoAdd">＋ Agregar locomoción</button>
     </div>
 
     <label class="chk"><input type="checkbox" id="vTAloj"> Tiene alojamiento</label>
@@ -741,6 +745,6 @@ if('serviceWorker' in navigator && location.protocol==='https:' && /github\.io$/
 }
 loadLocs().then(()=>{ if(LS.get('hs_autogps',true)) locate(); });
 </script>
-<script src="viaticos.js?v=9"></script>
+<script src="viaticos.js?v=10"></script>
 </body>
 </html>
