@@ -91,6 +91,15 @@
   .vgrp{font-size:12px;font-weight:800;letter-spacing:.06em;color:var(--muted);margin:14px 2px 6px;display:flex;justify-content:space-between}
   .vit{background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:10px 34px 10px 12px;margin-bottom:6px;cursor:pointer;position:relative}
   .vit::after{content:'✎';position:absolute;right:12px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:17px}
+  .dlghead{position:sticky;top:0;z-index:3;display:flex;align-items:center;justify-content:space-between;gap:8px;background:var(--card);margin:0 -16px 10px;padding:12px 12px 10px 16px;border-bottom:1px solid var(--line)}
+  #dlgV{overflow:hidden;padding:0}
+  #dlgV form{max-height:94vh;overflow:auto;padding:0 16px 16px}
+  .dlghead h3{margin:0}
+  .cerrar{width:38px;height:38px;border-radius:50%;border:1px solid var(--line);background:var(--bg);color:var(--ink);font-size:24px;line-height:1;cursor:pointer;flex:none}
+  .drop{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;min-height:76px;border:2px dashed var(--line);border-radius:12px;background:var(--bg);color:var(--pri2);cursor:pointer;text-align:center;padding:10px;margin-top:4px}
+  .drop span{font-weight:700;font-size:15px}
+  .drop small{color:var(--muted);font-size:12px}
+  .drop:active{border-color:var(--pri2)}
   .arow{border-bottom:1px dashed var(--line);padding:0 0 10px;margin:0 0 10px}
   .arow .g{display:grid;grid-template-columns:1fr 1fr 34px;gap:6px;margin-bottom:6px}
   .arow .ax{border:0;background:transparent;color:var(--bad);font-size:22px;cursor:pointer}
@@ -315,7 +324,7 @@
 
 <dialog id="dlgV" class="full">
   <form id="vForm">
-    <h3 id="vTitle">Viático</h3>
+    <div class="dlghead"><h3 id="vTitle">Viático</h3><button type="button" class="cerrar" id="vCerrar" aria-label="Cerrar sin guardar">×</button></div>
     <div id="vRevisar" class="revbox hide"></div>
     <div class="seg" id="vTipo" style="grid-template-columns:1fr 1fr;margin-bottom:12px">
       <button type="button" data-t="C100">C100<small>1 o más días</small></button>
@@ -762,6 +771,6 @@ if('serviceWorker' in navigator && location.protocol==='https:' && /github\.io$/
 }
 loadLocs().then(()=>{ if(LS.get('hs_autogps',true)) locate(); });
 </script>
-<script src="viaticos.js?v=18"></script>
+<script src="viaticos.js?v=19"></script>
 </body>
 </html>

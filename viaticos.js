@@ -348,8 +348,14 @@ function pintarTipo(){
 function pintarAdj(){
   const item=a=>'<div class="adj" data-a="'+esc(a.id)+'"><div class="th" id="th_'+esc(a.id)+'">'+(a.mime==='application/pdf'?'PDF':'…')+'</div><div class="nm">'+esc(a.nombre||'')+'</div><button type="button" class="x" data-x="'+esc(a.id)+'" aria-label="Quitar">×</button></div>';
   const adj=R.ed.adj||[];
-  document.querySelectorAll('#vLocos [data-lc]').forEach(el=>{ const id=el.dataset.lc; el.innerHTML = adj.filter(a=>claseDe(a)==='loco' && a.item===id).map(item).join('') || '<span class="note">Sin comprobante.</span>'; });
-  document.querySelectorAll('#vAlojs [data-ac]').forEach(el=>{ const id=el.dataset.ac; el.innerHTML = adj.filter(a=>a.clase==='aloj' && a.item===id).map(item).join('') || '<span class="note">Sin comprobante.</span>'; });
+  // el recuadro "Subir comprobante" se ve solo mientras no haya ninguno cargado
+  const porItem=(sel, attr, filtro)=>document.querySelectorAll(sel).forEach(el=>{
+    const id=el.dataset[attr], l=adj.filter(a=>filtro(a) && a.item===id);
+    el.innerHTML=l.map(item).join(''); el.classList.toggle('hide',!l.length);
+    const d=el.parentNode.querySelector('.drop'); if(d) d.classList.toggle('hide',!!l.length);
+  });
+  porItem('#vLocos [data-lc]','lc',a=>claseDe(a)==='loco');
+  porItem('#vAlojs [data-ac]','ac',a=>a.clase==='aloj');
   adj.forEach(async a=>{
     if(a.mime==='application/pdf') return;
     try{ const b=a._blob || await bajar(a.drive); const el=document.getElementById('th_'+a.id); if(el){ el.style.backgroundImage='url('+URL.createObjectURL(b)+')'; el.textContent=''; } }catch(e){}
@@ -443,7 +449,7 @@ function pintarLocos(){
   $('vLocos').innerHTML = R.ed.locos.map((l,i)=>'<div class="lrow" data-l="'+esc(l.id)+'"><label>Locomoción '+(i+1)+'</label>'+
     '<div class="seg"><button type="button" data-tr="ida"'+(l.tramo!=='vuelta'?' class="on"':'')+'>Ida</button><button type="button" data-tr="vuelta"'+(l.tramo==='vuelta'?' class="on"':'')+'>Vuelta</button></div>'+
     '<div class="g">'+selDia('lf',l.f)+'<input class="lm" type="number" inputmode="decimal" min="0" step="1" placeholder="Monto $" value="'+(+l.monto||'')+'" aria-label="Monto"><button type="button" class="lx" aria-label="Quitar">×</button></div>'+
-    '<div class="adjhead"><span class="note">Comprobante</span><label class="gps">＋ Agregar<input class="lin" type="file" accept="application/pdf,image/*" multiple hidden></label></div>'+
+    '<label class="drop"><span>＋ Subir comprobante</span><small>Foto o PDF del pasaje o boleto</small><input class="lin" type="file" accept="application/pdf,image/*" multiple hidden></label>'+
     '<div class="adjlist" data-lc="'+esc(l.id)+'"></div></div>').join('') || '<p class="note" style="margin:0 0 8px">Sin locomociones.</p>';
   pintarAdj();
 }
@@ -471,7 +477,7 @@ function pintarAlojs(){
   R.ed._ap=true;
   $('vAlojs').innerHTML = R.ed.alojs.map((a,i)=>'<div class="arow" data-al="'+esc(a.id)+'"><label>Alojamiento '+(i+1)+'</label>'+
     '<div class="g">'+selDia('af',a.f)+'<input class="am" type="number" inputmode="decimal" min="0" step="1" placeholder="Monto $" value="'+(+a.monto||'')+'" aria-label="Monto"><button type="button" class="ax" aria-label="Quitar">×</button></div>'+
-    '<div class="adjhead"><span class="note">Comprobante</span><label class="gps">＋ Agregar<input class="ain" type="file" accept="application/pdf,image/*" multiple hidden></label></div>'+
+    '<label class="drop"><span>＋ Subir comprobante</span><small>Foto o PDF de la factura del hotel</small><input class="ain" type="file" accept="application/pdf,image/*" multiple hidden></label>'+
     '<div class="adjlist" data-ac="'+esc(a.id)+'"></div></div>').join('') || '<p class="note" style="margin:0 0 8px">Sin alojamientos.</p>';
   pintarAdj();
 }
@@ -496,6 +502,7 @@ function quitarAdj(e){
   const a=R.ed.adj.find(a=>a.id===x.dataset.x); if(!a) return;
   R.ed.adj=R.ed.adj.filter(z=>z!==a); R.ed._quitados.push(a); pintarAdj();
 }
+$('vCerrar').addEventListener('click',()=>$('vCancel').click());
 $('vCancel').addEventListener('click',()=>{
   // lo subido en esta edición y no guardado se borra de Drive
   (R.ed._subidos||[]).forEach(a=>borrarDrive(a.drive));
