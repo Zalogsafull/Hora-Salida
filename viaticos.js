@@ -229,9 +229,18 @@ function pintar(){
 }
 
 /* ---------------- editor ---------------- */
+// pares Departamento → Localidad (salida e intermedias), igual que la entrada
+function depDe(sel){ return sel.id==='vCSalLoc' ? $('vSalDep') : sel.closest('.irow').querySelector('.idep'); }
+function llenarLocs(sel, dep, id){
+  const lista=locs.filter(l=>l.departamento===dep).sort((a,b)=>cmp(a.localidad,b.localidad));
+  sel.innerHTML = dep ? (lista.length>1?'<option value="">Elegí…</option>':'')+lista.map(l=>'<option value="'+esc(l.id)+'"'+(l.id===id?' selected':'')+'>'+esc(l.localidad)+'</option>').join('') : '<option value="">—</option>';
+  sel.disabled=!dep;
+}
 function opcionesLoc(sel, id){
-  const deps=[...new Set(locs.map(l=>l.departamento))].sort(cmp);
-  sel.innerHTML='<option value="">—</option>'+deps.map(d=>'<optgroup label="'+esc(d)+'">'+locs.filter(l=>l.departamento===d).sort((a,b)=>cmp(a.localidad,b.localidad)).map(l=>'<option value="'+esc(l.id)+'"'+(l.id===id?' selected':'')+'>'+esc(l.localidad)+'</option>').join('')+'</optgroup>').join('');
+  const l=id?byId(id):null, dep=l?l.departamento:'', ds=depDe(sel);
+  const deps=[...new Set(locs.map(x=>x.departamento))].sort(cmp);
+  ds.innerHTML='<option value="">Elegí…</option>'+deps.map(d=>'<option'+(d===dep?' selected':'')+'>'+esc(d)+'</option>').join('');
+  llenarLocs(sel, dep, l?l.id:'');
 }
 function pintarInter(){
   R.ed._ip=true;
@@ -239,13 +248,13 @@ function pintarInter(){
   $('vInterChk').classList.toggle('hide',!c100);
   $('vInterBox').classList.toggle('hide',!(c100&&on));
   $('vInterC200').classList.toggle('hide', c100 || !(R.ed.inter||[]).length);
-  $('vInter').innerHTML = (R.ed.inter||[]).map((p,i)=>'<div class="irow" data-i="'+i+'"><label>'+(i+1)+'ª marca intermedia</label><select class="iloc"></select>'+
+  $('vInter').innerHTML = (R.ed.inter||[]).map((p,i)=>'<div class="irow" data-i="'+i+'"><label>'+(i+1)+'ª marca intermedia</label><div class="g2"><select class="idep" aria-label="Departamento"></select><select class="iloc" aria-label="Localidad"></select></div>'+
     '<div class="g"><input class="if" type="date" value="'+esc(p.f||'')+'"><input class="ih" type="time" value="'+esc(p.h||'')+'"><button type="button" class="x" aria-label="Quitar">×</button></div></div>').join('')
     || '<p class="note" style="margin:0 0 8px">Todavía no hay marcas intermedias.</p>';
   $('vInter').querySelectorAll('.irow').forEach(row=>{
     const p=R.ed.inter[+row.dataset.i]; const sel=row.querySelector('.iloc');
     const l=locs.find(x=>norm(corto(x.localidad))===norm(p.loc||'')); opcionesLoc(sel, l?l.id:'');
-    if(p.loc && !l){ sel.insertAdjacentHTML('afterbegin','<option value="otra:'+esc(p.loc)+'" selected>'+esc(p.loc)+'</option>'); }
+    if(p.loc && !l){ sel.innerHTML='<option value="otra:'+esc(p.loc)+'" selected>'+esc(p.loc)+'</option>'; sel.disabled=false; }
   });
 }
 function leerInter(){
@@ -257,6 +266,8 @@ function leerInter(){
 }
 $('vTInter').addEventListener('change',()=>{ leerInter(); if($('vTInter').checked && !(R.ed.inter||[]).length) R.ed.inter=[{loc:locDeSel(), f:$('vFIni').value, h:''}]; pintarInter(); });
 $('vInterAdd').addEventListener('click',()=>{ leerInter(); const u=R.ed.inter[R.ed.inter.length-1]; R.ed.inter.push({loc:u?u.loc:locDeSel(), f:u?u.f:$('vFIni').value, h:''}); pintarInter(); });
+$('vInter').addEventListener('change',e=>{ if(e.target.classList.contains('idep')) llenarLocs(e.target.closest('.irow').querySelector('.iloc'), e.target.value, ''); });
+$('vSalDep').addEventListener('change',e=>{ llenarLocs($('vCSalLoc'), e.target.value, ''); calcEditor(); });
 $('vInter').addEventListener('click',e=>{ const x=e.target.closest('.x'); if(!x) return; leerInter(); R.ed.inter.splice(+x.closest('.irow').dataset.i,1); pintarInter(); });
 function pintarTipo(){
   document.querySelectorAll('#vTipo button').forEach(b=>b.classList.toggle('on',b.dataset.t===R.ed.tipo));
@@ -532,9 +543,11 @@ async function generarPDF(){
     out.innerHTML='<div class="pdfout">'+(sinTerminar?'<p class="hint bad" style="margin:0">Ojo: '+sinTerminar+' viático(s) sin fecha u hora de finalización.</p>':'')+res.map((r,i)=>{
       const url=URL.createObjectURL(new Blob([r.bytes],{type:'application/pdf'}));
       return '<div><div class="note" style="margin-bottom:4px"><b>'+esc(r.desc)+'</b> · '+esc(r.nombre)+'</div><div class="row">'+
-        '<a class="btn pri" href="'+url+'" download="'+esc(r.nombre)+'">Descargar</a>'+
+        '<button class="btn pri" type="button" data-ver="'+i+'">Ver</button>'+
+        '<a class="btn ghost" href="'+url+'" download="'+esc(r.nombre)+'">Descargar</a>'+
         '<button class="btn ghost" type="button" data-share="'+i+'">Compartir</button></div></div>';
     }).join('')+'</div>';
+    out.querySelectorAll('[data-ver]').forEach(b=>b.addEventListener('click',()=>verPDF(res[+b.dataset.ver])));
     out.querySelectorAll('[data-share]').forEach(b=>b.addEventListener('click',async()=>{
       const r=res[+b.dataset.share]; const file=new File([r.bytes],r.nombre,{type:'application/pdf'});
       try{
@@ -544,6 +557,21 @@ async function generarPDF(){
     }));
   }catch(e){ out.innerHTML='<p class="hint bad">No se pudo generar el PDF: '+esc(e.message||e.code||e)+'</p>'; }
 }
+
+async function verPDF(r){
+  $('pdfTitulo').textContent=r.nombre; const cont=$('pdfPaginas'); cont.innerHTML='<p class="note" style="color:#fff">Abriendo…</p>';
+  $('dlgPdf').showModal();
+  try{
+    const lib=await pdfjs(); const doc=await lib.getDocument({data:r.bytes.slice(0)}).promise; cont.innerHTML='';
+    const w=Math.min(1400, Math.max(600, cont.clientWidth*(window.devicePixelRatio||1)));
+    for(let n=1;n<=doc.numPages;n++){
+      const pg=await doc.getPage(n), vp0=pg.getViewport({scale:1}), vp=pg.getViewport({scale:w/vp0.width});
+      const cv=document.createElement('canvas'); cv.width=vp.width; cv.height=vp.height; cont.appendChild(cv);
+      await pg.render({canvasContext:cv.getContext('2d'), viewport:vp}).promise;
+    }
+  }catch(e){ cont.innerHTML='<p class="note" style="color:#fff">No se pudo mostrar el PDF: usá Descargar.</p>'; }
+}
+$('pdfCerrar').addEventListener('click',()=>$('dlgPdf').close());
 
 /* ---------------- desde la calculadora ---------------- */
 function desdeCalculadora(){
