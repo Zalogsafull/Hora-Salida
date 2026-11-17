@@ -455,7 +455,13 @@ function nuevaLoco(){ leerLocos(); const n=R.ed.locos.length; R.ed.locos.push({i
 $('vLocoAdd').addEventListener('click',nuevaLoco);
 $('vLocos').addEventListener('click',e=>{
   const tr=e.target.closest('[data-tr]');
-  if(tr){ tr.parentNode.querySelectorAll('button').forEach(b=>b.classList.toggle('on',b===tr)); return; }
+  if(tr){
+    tr.parentNode.querySelectorAll('button').forEach(b=>b.classList.toggle('on',b===tr));
+    // ida → primer día del viático · vuelta → último día (después se puede cambiar)
+    const sel=tr.closest('.lrow').querySelector('.lf'), dias=diasRango();
+    if(sel && dias.length) sel.value = tr.dataset.tr==='vuelta' ? dias[dias.length-1] : dias[0];
+    return;
+  }
   const lx=e.target.closest('.lx');
   if(lx){ leerLocos(); const id=lx.closest('.lrow').dataset.l; R.ed.adj.filter(a=>a.item===id).forEach(a=>R.ed._quitados.push(a)); R.ed.adj=R.ed.adj.filter(a=>a.item!==id); R.ed.locos=R.ed.locos.filter(l=>l.id!==id); pintarLocos(); return; }
   quitarAdj(e);
