@@ -46,16 +46,26 @@ const pesos = n => '$'+(+n).toLocaleString('es-UY');
 const interCuenta = v => v.tipo==='C100' && !!v.tInter && (v.inter||[]).some(p=>p.h);
 // nombre corto de la localidad de la marca de salida
 function locSalida(v){ const l=v.cSalLoc&&!String(v.cSalLoc).startsWith('otra:')?byId(v.cSalLoc):null; return l?corto(l.localidad):''; }
+function interOrdenadas(v){ return (v.inter||[]).filter(p=>p.h).sort((a,b)=>((a.f||'')+a.h).localeCompare((b.f||'')+b.h)); }
+// C100: un renglón por localidad, en el orden en que se recorren.
+//   entrada (localidad de entrada, termina en la marca de entrada) → marcas intermedias
+//   (cada una termina en su marca; seguidas en la misma localidad se juntan) → salida (termina en la finalización).
+//   Cada renglón empieza donde terminó el anterior. Si todo es la misma localidad, queda un solo renglón.
+function tramosC100(v){
+  if(v.tipo!=='C100' || !v.cEnt) return null;
+  const segs=[], add=(loc,fin)=>{ const u=segs[segs.length-1]; if(u && norm(u.loc)===norm(loc)) u.fin=fin; else segs.push({loc,fin}); };
+  add(v.localidad, {f:v.fIni,h:v.cEnt});
+  if(interCuenta(v)) for(const p of interOrdenadas(v)) add(p.loc||v.localidad, {f:p.f||v.fIni,h:p.h});
+  add(locSalida(v)||v.localidad, {f:v.fFin,h:v.hFin});
+  if(segs.length<2) return null;
+  let ini={f:v.fIni,h:v.hIni};
+  return segs.map(sg=>{ const par=[{loc:sg.loc,...ini}, sg.fin]; ini=sg.fin; return par; });
+}
 function renglones(v){
-  if(interCuenta(v)) return renglonesInter(v);
-  const ini={loc:v.localidad,f:v.fIni,h:v.hIni}, fin={f:v.fFin,h:v.hFin};
-  // C100 con la marca de salida en otra localidad: dos renglones partidos en la marca de entrada
-  //   1) localidad de entrada: hora de comienzo → marca de entrada
-  //   2) localidad de salida: marca de entrada (repetida) → hora de finalización
-  const ls=locSalida(v);
-  if(v.tipo==='C100' && v.cEnt && ls && norm(ls)!==norm(v.localidad||''))
-    return formatear(v, [[ini,{f:v.fIni,h:v.cEnt}], [{loc:ls,f:v.fIni,h:v.cEnt}, fin]]);
-  return formatear(v, [[ini,fin]]);
+  const t=tramosC100(v);
+  if(t) return formatear(v, t);                 // varias localidades
+  if(interCuenta(v)) return renglonesInter(v);  // misma localidad con marcas intermedias: se agrupan por día
+  return formatear(v, [[{loc:v.localidad,f:v.fIni,h:v.hIni},{f:v.fFin,h:v.hFin}]]);
 }
 function formatear(v, pares){
   const alo=alojEnRenglones(v,pares);
@@ -602,9 +612,28 @@ function normHora(t){
   return m[1].padStart(2,'0')+':'+m[2];
 }
 const isoDe = t => { const m=/(\d{2})[\/\-.](\d{2})[\/\-.](\d{4})/.exec(t||''); return m ? m[3]+'-'+m[2]+'-'+m[1] : null; };
-async function analizarPagina(cv, w){
-  const {data}=await w.recognize(cv,{},{blocks:true});
+async function palabrasOCR(cv){
+  const w=await ocrWorker(); const {data}=await w.recognize(cv,{},{blocks:true});
   const ws=[]; for(const b of data.blocks||[]) for(const p of b.paragraphs) for(const l of p.lines) for(const x of l.words) ws.push({t:x.text, x0:x.bbox.x0, y0:x.bbox.y0, x1:x.bbox.x1, y1:x.bbox.y1});
+  return ws;
+}
+// PDF impreso desde el navegador: trae texto, se lee directo (sin OCR)
+async function palabrasTexto(pg, vp){
+  const tc=await pg.getTextContent(), ws=[];
+  for(const it of tc.items){
+    const str=(it.str||''); if(!str.trim()) continue;
+    const tx=pdfjsLib.Util.transform(vp.transform, it.transform);
+    const h=Math.hypot(tx[2],tx[3]), x0=tx[4], yb=tx[5], wTot=(it.width||0)*vp.scale || h*0.5*str.length;
+    let pos=0; const n=str.length;
+    for(const m of str.matchAll(/\S+/g)){
+      const a=x0+wTot*(m.index/n), b=x0+wTot*((m.index+m[0].length)/n);
+      ws.push({t:m[0], x0:a, x1:b, y0:yb-h*0.85, y1:yb+h*0.15});
+    }
+  }
+  ws.sort((a,b)=>(a.y0-b.y0)||(a.x0-b.x0));
+  return ws;
+}
+async function analizarPagina(cv, ws){
   const sap=ws.find((x,i)=>/^SAP$/i.test(x.t) && ws[i-1] && /^Marcas$/i.test(ws[i-1].t));
   const titulo = sap ? ws[ws.indexOf(sap)-1] : null;
   const desdeY = titulo ? titulo.y1 : 0;
@@ -632,7 +661,7 @@ async function analizarPagina(cv, w){
 function analizarMarcas(driveId){
   if(OCR.cache[driveId]) return OCR.cache[driveId];
   const pr=(async()=>{
-    const blob=await bajar(driveId), lib=await pdfjs(), w=await ocrWorker();
+    const blob=await bajar(driveId), lib=await pdfjs();
     const doc=await lib.getDocument({data:new Uint8Array(await blob.arrayBuffer())}).promise;
     const paginas=[];
     for(let n=1;n<=doc.numPages;n++){
@@ -640,7 +669,9 @@ function analizarMarcas(driveId){
       const cv=document.createElement('canvas'); cv.width=Math.round(vp.width); cv.height=Math.round(vp.height);
       const c=cv.getContext('2d'); c.fillStyle='#fff'; c.fillRect(0,0,cv.width,cv.height);
       await pg.render({canvasContext:c, viewport:vp}).promise;
-      const r=await analizarPagina(cv,w); r.cv=cv; paginas.push(r);
+      let ws=await palabrasTexto(pg,vp);
+      if(!ws.some(x=>isoDe(x.t))) ws=await palabrasOCR(cv);
+      const r=await analizarPagina(cv,ws); r.cv=cv; paginas.push(r);
     }
     return paginas;
   })();
