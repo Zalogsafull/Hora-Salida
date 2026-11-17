@@ -119,6 +119,8 @@ function fusionar(a,b){
     const g = !x ? y : !y ? x : (y.t>x.t ? y : x);
     if(g && !(out.del[id] && out.del[id]>=g.t)) out.v[id]=g;
   }
+  out.marcasMes={...(a.marcasMes||{})};
+  for(const [m,x] of Object.entries(b.marcasMes||{})) if(!out.marcasMes[m] || (x.t||0)>(out.marcasMes[m].t||0)) out.marcasMes[m]=x;
   const an=a.nombreT||0, bn=b.nombreT||0;
   out.nombre = bn>an ? b.nombre : a.nombre; out.nombreT=Math.max(an,bn);
   return out;
@@ -188,12 +190,13 @@ function pintar(){
     const loco=l.reduce((s,v)=>s+montoLoco(v),0), aloj=l.reduce((s,v)=>s+montoAloj(v),0);
     const tot=[loco?'Locom. '+pesos(loco):'', aloj?'Aloj. '+pesos(aloj):''].filter(Boolean).join(' · ');
     return '<div class="vgrp"><span>'+t+' · '+l.length+'</span>'+(tot?'<span>'+tot+'</span>':'')+'</div>'+l.map(v=>{
-      const nm=(v.adj||[]).filter(a=>a.clase==='marca').length, nc=compsPDF(v).length;
+      const nm=0, nc=compsPDF(v).length;
       const fin = v.fFin&&v.hFin ? fDM(v.fFin)+' '+v.hFin : '<span class="open">sin terminar</span>';
       return '<div class="vit" data-id="'+esc(v.id)+'"><div class="t1">'+esc(v.localidad||'—')+'</div><div class="t2">'+fDM(v.fIni)+' '+esc(v.hIni||'--:--')+' → '+fin+
         (nm||nc?' · '+(nm?'🕒'+nm+' ':'')+(nc?'🧾'+nc:''):'')+(montoLoco(v)?' · 🚌'+pesos(montoLoco(v)):'')+(montoAloj(v)?' · 🛏'+pesos(montoAloj(v)):'')+'</div></div>';
     }).join('');
   };
+  pintarMarcasMes();
   $('regLista').innerHTML = grupo('C100')+grupo('C200') || '<p class="note" style="padding:6px 2px">No hay viáticos en '+mesNombre(R.mes)+'.</p>';
 }
 
@@ -209,7 +212,6 @@ function pintarTipo(){
 function pintarAdj(){
   const item=a=>'<div class="adj" data-a="'+esc(a.id)+'"><div class="th" id="th_'+esc(a.id)+'">'+(a.mime==='application/pdf'?'PDF':'…')+'</div><div class="nm">'+esc(a.nombre||'')+'</div><button type="button" class="x" data-x="'+esc(a.id)+'" aria-label="Quitar">×</button></div>';
   const adj=R.ed.adj||[];
-  $('vMarcas').innerHTML = adj.filter(a=>a.clase==='marca').map(item).join('') || '<span class="note">Subí el PDF de la página de marcas y recortalo.</span>';
   $('vLocoAdj').innerHTML = adj.filter(a=>claseDe(a)==='loco').map(item).join('') || '<span class="note">Sin comprobantes.</span>';
   $('vAlojAdj').innerHTML = adj.filter(a=>a.clase==='aloj').map(item).join('') || '<span class="note">Sin comprobantes.</span>';
   adj.forEach(async a=>{
@@ -222,8 +224,8 @@ function abrirEditor(v){
   R.ed = JSON.parse(JSON.stringify(v || {id:uid(), tipo:'C200', localidad:'', fIni:isoHoy(), hIni:'', fFin:isoHoy(), hFin:'', loco:0, aloj:0, tLoco:false, tAloj:false, adj:[]}));
   R.ed._nuevo=nuevo; R.ed._subidos=[]; R.ed._quitados=[];
   $('vTitle').textContent = nuevo ? 'Nuevo viático' : 'Editar viático';
-  $('dlLocNames').innerHTML=[...new Set(locs.map(l=>corto(l.localidad)))].sort(cmp).map(n=>'<option value="'+esc(n)+'">').join('');
-  $('vLoc').value=R.ed.localidad||''; $('vFIni').value=R.ed.fIni||''; $('vHIni').value=R.ed.hIni||''; $('vFFin').value=R.ed.fFin||''; $('vHFin').value=R.ed.hFin||'';
+  ponerLocalidad(R.ed.localidad||'');
+  $('vFIni').value=R.ed.fIni||''; $('vHIni').value=R.ed.hIni||''; $('vFFin').value=R.ed.fFin||''; $('vHFin').value=R.ed.hFin||'';
   $('vLoco').value = R.ed.loco||0; $('vAloj').value = R.ed.aloj||0;
   $('vTLoco').checked = tieneLoco(R.ed); $('vTAloj').checked = !!R.ed.tAloj; checks();
   opcionesLoc($('vCEntLoc'), R.ed.cEntLoc||''); opcionesLoc($('vCSalLoc'), R.ed.cSalLoc||'');
@@ -233,8 +235,25 @@ function abrirEditor(v){
   pintarTipo(); pintarAdj();
   $('dlgV').showModal();
 }
+function locDeSel(){ const v=$('vLocSel').value; if(!v) return ''; if(v.startsWith('otra:')) return v.slice(5); const l=byId(v); return l?corto(l.localidad):''; }
+function pintarLocSel(dep, val){
+  const lista=locs.filter(l=>l.departamento===dep).sort((a,b)=>cmp(a.localidad,b.localidad));
+  $('vLocSel').innerHTML = dep ? (lista.length>1?'<option value="">Elegí…</option>':'')+lista.map(l=>'<option value="'+esc(l.id)+'"'+(l.id===val?' selected':'')+'>'+esc(l.localidad)+'</option>').join('') : '<option value="">—</option>';
+  $('vLocSel').disabled=!dep;
+}
+function ponerLocalidad(nombre){
+  const deps=[...new Set(locs.map(l=>l.departamento))].sort(cmp);
+  const l = nombre ? locs.find(x=>norm(corto(x.localidad))===norm(nombre) || norm(x.localidad)===norm(nombre)) : null;
+  const dep = l ? l.departamento : '';
+  $('vLocDep').innerHTML='<option value="">Elegí…</option>'+deps.map(d=>'<option'+(d===dep?' selected':'')+'>'+esc(d)+'</option>').join('');
+  pintarLocSel(dep, l?l.id:'');
+  if(nombre && !l){ // localidad que ya no está en la lista: se mantiene
+    $('vLocSel').innerHTML='<option value="otra:'+esc(nombre)+'" selected>'+esc(nombre)+'</option>'; $('vLocSel').disabled=false;
+  }
+}
+$('vLocDep').addEventListener('change',e=>pintarLocSel(e.target.value,''));
 function leerEditor(){
-  Object.assign(R.ed,{localidad:$('vLoc').value.trim(), fIni:$('vFIni').value, hIni:$('vHIni').value, fFin:$('vFFin').value, hFin:$('vHFin').value,
+  Object.assign(R.ed,{localidad:locDeSel(), fIni:$('vFIni').value, hIni:$('vHIni').value, fFin:$('vFFin').value, hFin:$('vHFin').value,
     tLoco:$('vTLoco').checked, tAloj:$('vTAloj').checked,
     loco: Math.max(0, Math.round(+$('vLoco').value||0)), aloj: Math.max(0, Math.round(+$('vAloj').value||0)),
     cEntLoc:$('vCEntLoc').value, cSalLoc:$('vCSalLoc').value, cEnt:$('vCEnt').value, cSal:$('vCSal').value});
@@ -242,7 +261,7 @@ function leerEditor(){
 function calcEditor(){
   const le=byId($('vCEntLoc').value), ls=byId($('vCSalLoc').value), me=toMin($('vCEnt').value), ms=toMin($('vCSal').value);
   const msg=[];
-  if(le && me!=null){ $('vHIni').value=hhmm(me-toMin(le.horas)); msg.push('Comienzo '+$('vHIni').value+' ('+$('vCEnt').value+' − '+dur(toMin(le.horas))+')'); if(!$('vLoc').value) $('vLoc').value=corto(le.localidad); }
+  if(le && me!=null){ $('vHIni').value=hhmm(me-toMin(le.horas)); msg.push('Comienzo '+$('vHIni').value+' ('+$('vCEnt').value+' − '+dur(toMin(le.horas))+')'); if(!locDeSel()) ponerLocalidad(corto(le.localidad)); }
   if(ls && ms!=null){ $('vHFin').value=hhmm(ms+toMin(ls.horas)); msg.push('Finalización '+$('vHFin').value+' ('+$('vCSal').value+' + '+dur(toMin(ls.horas))+')'); }
   $('vCalcHint').textContent = msg.join(' · ') || 'Hora comienzo = marca − viaje · Hora finalización = marca + viaje';
 }
@@ -250,7 +269,7 @@ function calcEditor(){
 $('vTipo').addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b) return; R.ed.tipo=b.dataset.t; pintarTipo(); });
 function checks(){ $('vLocoBox').classList.toggle('hide',!$('vTLoco').checked); $('vAlojBox').classList.toggle('hide',!$('vTAloj').checked); }
 $('vTLoco').addEventListener('change',checks); $('vTAloj').addEventListener('change',checks);
-['vMarcas','vLocoAdj','vAlojAdj'].forEach(id=>$(id).addEventListener('click',quitarAdj));
+['vLocoAdj','vAlojAdj'].forEach(id=>$(id).addEventListener('click',quitarAdj));
 function quitarAdj(e){
   const x=e.target.closest('[data-x]'); if(!x) return;
   const a=R.ed.adj.find(a=>a.id===x.dataset.x); if(!a) return;
@@ -316,95 +335,30 @@ async function subirComps(files, clase){
 }
 $('vLocoIn').addEventListener('change', e=>{ const f=[...e.target.files]; e.target.value=''; subirComps(f,'loco'); });
 $('vAlojIn').addEventListener('change', e=>{ const f=[...e.target.files]; e.target.value=''; subirComps(f,'aloj'); });
-$('vMarcaIn').addEventListener('change', async e=>{
-  const f=e.target.files[0]; e.target.value=''; if(!f) return;
-  try{ await abrirRecorte(f); }catch(err){ $('vErr').textContent='No se pudo abrir el archivo: '+(err.message||err); }
-});
-
-/* ---------------- recorte de la página de marcas ---------------- */
-const C={pages:[], i:0, src:null, rect:null, drag:null, n:0, nombre:''};
+/* ---------------- PDF de marcas del mes ---------------- */
 let _pdfjs=null;
 function cargarScript(src){ return new Promise((ok,mal)=>{ const s=document.createElement('script'); s.src=src; s.onload=ok; s.onerror=()=>mal(new Error('No se pudo cargar '+src)); document.head.appendChild(s); }); }
 async function pdfjs(){ if(!_pdfjs) _pdfjs=cargarScript('lib/pdf.min.js').then(()=>{ pdfjsLib.GlobalWorkerOptions.workerSrc='lib/pdf.worker.min.js'; return pdfjsLib; }); return _pdfjs; }
-async function abrirRecorte(file){
-  C.pages=[]; C.i=0; C.n=0; C.nombre=(file.name||'marcas').replace(/\.[^.]+$/,'');
-  $('cropMsg').textContent='Abriendo…'; $('dlgCrop').showModal();
-  if(file.type==='application/pdf'){
-    const lib=await pdfjs();
-    const doc=await lib.getDocument({data:await file.arrayBuffer()}).promise;
-    for(let p=1;p<=doc.numPages;p++) C.pages.push({doc,p});
-  } else {
-    const url=URL.createObjectURL(file);
-    const img=await new Promise((ok,mal)=>{ const i=new Image(); i.onload=()=>ok(i); i.onerror=()=>mal(new Error('imagen inválida')); i.src=url; });
-    const cv=document.createElement('canvas'); const k=Math.min(1,2200/img.naturalWidth); cv.width=img.naturalWidth*k; cv.height=img.naturalHeight*k;
-    const c=cv.getContext('2d'); c.fillStyle='#fff'; c.fillRect(0,0,cv.width,cv.height); c.drawImage(img,0,0,cv.width,cv.height);
-    C.pages.push({cv});
-  }
-  await mostrarPagina(0);
+function pintarMarcasMes(){
+  const m=(R.datos.marcasMes||{})[R.mes];
+  $('mesMarcas').innerHTML = m && m.drive
+    ? '📄 '+esc(m.nombre||'marcas.pdf')+' <button class="lnk" type="button" id="mesMarcasDel" style="width:auto;display:inline;padding:0 0 0 8px">Quitar</button>'
+    : 'Subí el PDF con todas las marcas del mes (impreso desde la intranet).';
+  const d=$('mesMarcasDel'); if(d) d.onclick=()=>{ const x=R.datos.marcasMes[R.mes]; if(x&&x.drive) borrarDrive(x.drive); R.datos.marcasMes[R.mes]={t:Date.now()}; cambio(); };
 }
-async function mostrarPagina(i){
-  C.i=i; const pg=C.pages[i];
-  if(!pg.cv){
-    const page=await pg.doc.getPage(pg.p); const vp0=page.getViewport({scale:1}); const scale=1700/vp0.width; const vp=page.getViewport({scale});
-    const cv=document.createElement('canvas'); cv.width=vp.width; cv.height=vp.height;
-    const c=cv.getContext('2d'); c.fillStyle='#fff'; c.fillRect(0,0,cv.width,cv.height);
-    await page.render({canvasContext:c, viewport:vp}).promise; pg.cv=cv;
-  }
-  C.src=pg.cv; C.rect={x:0.04*C.src.width, y:0.04*C.src.height, w:0.92*C.src.width, h:0.4*C.src.height};
-  $('cropPages').classList.toggle('hide', C.pages.length<2);
-  $('cropPg').textContent=(i+1)+' / '+C.pages.length;
-  $('cropMsg').textContent = C.n ? C.n+' recorte(s) agregado(s). Podés agregar otro o tocar Listo.' : '';
-  dibujarCrop();
-}
-function dibujarCrop(){
-  const cv=$('cropCv'), s=C.src; cv.width=s.width; cv.height=s.height;
-  const c=cv.getContext('2d'); c.drawImage(s,0,0);
-  const r=C.rect; c.fillStyle='rgba(0,0,0,.45)';
-  c.fillRect(0,0,s.width,r.y); c.fillRect(0,r.y+r.h,s.width,s.height-r.y-r.h); c.fillRect(0,r.y,r.x,r.h); c.fillRect(r.x+r.w,r.y,s.width-r.x-r.w,r.h);
-  const lw=Math.max(3,s.width/300); c.strokeStyle='#1fa855'; c.lineWidth=lw; c.strokeRect(r.x,r.y,r.w,r.h);
-  c.fillStyle='#1fa855'; const hs=lw*5;
-  [[r.x+r.w/2,r.y],[r.x+r.w/2,r.y+r.h],[r.x,r.y+r.h/2],[r.x+r.w,r.y+r.h/2]].forEach(([x,y])=>{ c.beginPath(); c.arc(x,y,hs,0,7); c.fill(); });
-}
-function ptCrop(e){ const cv=$('cropCv'), b=cv.getBoundingClientRect(), k=cv.width/b.width; return {x:(e.clientX-b.left)*k, y:(e.clientY-b.top)*k, k}; }
-$('cropCv').addEventListener('pointerdown',e=>{
-  const p=ptCrop(e), r=C.rect, tol=28*p.k;
-  const near=(a,b)=>Math.abs(a-b)<tol;
-  const inX=p.x>r.x-tol && p.x<r.x+r.w+tol, inY=p.y>r.y-tol && p.y<r.y+r.h+tol;
-  let m=null;
-  if(inX && near(p.y,r.y)) m='t'; else if(inX && near(p.y,r.y+r.h)) m='b';
-  else if(inY && near(p.x,r.x)) m='l'; else if(inY && near(p.x,r.x+r.w)) m='r';
-  else if(p.x>r.x && p.x<r.x+r.w && p.y>r.y && p.y<r.y+r.h) m='m';
-  else m='n';
-  C.drag={m, p0:p, r0:{...r}}; $('cropCv').setPointerCapture(e.pointerId); e.preventDefault();
-});
-$('cropCv').addEventListener('pointermove',e=>{
-  if(!C.drag) return; const p=ptCrop(e), d=C.drag, r0=d.r0, W=C.src.width, H=C.src.height, dx=p.x-d.p0.x, dy=p.y-d.p0.y, min=40;
-  let {x,y,w,h}=r0;
-  if(d.m==='t'){ y=Math.min(Math.max(0,r0.y+dy), r0.y+r0.h-min); h=r0.y+r0.h-y; }
-  if(d.m==='b'){ h=Math.max(min, Math.min(H-r0.y, r0.h+dy)); }
-  if(d.m==='l'){ x=Math.min(Math.max(0,r0.x+dx), r0.x+r0.w-min); w=r0.x+r0.w-x; }
-  if(d.m==='r'){ w=Math.max(min, Math.min(W-r0.x, r0.w+dx)); }
-  if(d.m==='m'){ x=Math.min(Math.max(0,r0.x+dx), W-r0.w); y=Math.min(Math.max(0,r0.y+dy), H-r0.h); }
-  if(d.m==='n'){ x=Math.max(0,Math.min(d.p0.x,p.x)); y=Math.max(0,Math.min(d.p0.y,p.y)); w=Math.max(min,Math.abs(dx)); h=Math.max(min,Math.abs(dy)); w=Math.min(w,W-x); h=Math.min(h,H-y); }
-  C.rect={x,y,w,h}; dibujarCrop();
-});
-['pointerup','pointercancel'].forEach(ev=>$('cropCv').addEventListener(ev,()=>{ C.drag=null; }));
-$('cropPrev').addEventListener('click',()=>{ if(C.i>0) mostrarPagina(C.i-1); });
-$('cropNext').addEventListener('click',()=>{ if(C.i<C.pages.length-1) mostrarPagina(C.i+1); });
-async function agregarRecorte(entera){
-  const r = entera ? {x:0,y:0,w:C.src.width,h:C.src.height} : C.rect;
-  const cv=document.createElement('canvas'); cv.width=Math.round(r.w); cv.height=Math.round(r.h);
-  const c=cv.getContext('2d'); c.fillStyle='#fff'; c.fillRect(0,0,cv.width,cv.height); c.drawImage(C.src, r.x,r.y,r.w,r.h, 0,0,cv.width,cv.height);
-  $('cropMsg').textContent='Subiendo…';
+$('mesMarcasIn').addEventListener('change', async e=>{
+  const f=e.target.files[0]; e.target.value=''; if(!f) return;
+  if(f.type!=='application/pdf'){ toast('Tiene que ser un PDF'); return; }
+  $('mesMarcas').textContent='Subiendo '+f.name+'…';
   try{
-    const j=await aJpeg(cv, 2400, 0.88);
-    await agregarAdj(j, C.nombre+(C.n?'-'+(C.n+1):'')+'.jpg', 'image/jpeg', 'marca', {fw:+(r.w/C.src.width).toFixed(4)});
-    C.n++; $('cropMsg').textContent=C.n+' recorte(s) agregado(s). Podés agregar otro o tocar Listo.';
-  }catch(e){ $('cropMsg').textContent='No se pudo subir'+(e&&e.code==='token'?': renová el permiso de Google.':'.'); }
-}
-$('cropAdd').addEventListener('click',()=>agregarRecorte(false));
-$('cropAll').addEventListener('click',()=>agregarRecorte(true));
-$('cropDone').addEventListener('click',()=>$('dlgCrop').close());
+    await asegurarToken();
+    const ant=(R.datos.marcasMes||{})[R.mes];
+    const drive=await subir(f, f.name, 'application/pdf'); await blobPut(drive, f);
+    if(ant && ant.drive) borrarDrive(ant.drive);
+    R.datos.marcasMes=R.datos.marcasMes||{}; R.datos.marcasMes[R.mes]={drive, nombre:f.name, t:Date.now()};
+    cambio(); toast('PDF de marcas guardado');
+  }catch(err){ toast('No se pudo subir el PDF'+(err&&err.code==='token'?': renová el permiso de Google':'')); pintarMarcasMes(); }
+});
 
 /* ---------------- PDF de fin de mes ---------------- */
 let _pdflib=null;

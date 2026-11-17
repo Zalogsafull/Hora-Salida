@@ -99,8 +99,6 @@
   .adj .th{width:86px;height:86px;border-radius:8px;border:1px solid var(--line);background:var(--bg) center/cover no-repeat;display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--muted);text-align:center;overflow:hidden}
   .adj .nm{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .adj .x{position:absolute;top:-6px;right:-6px;width:24px;height:24px;border-radius:50%;border:0;background:var(--bad);color:#fff;font-weight:700;cursor:pointer;line-height:24px;padding:0}
-  .cropwrap{position:relative;touch-action:none;background:#555;border-radius:8px;overflow:hidden}
-  .cropwrap canvas{display:block;width:100%;height:auto}
   .pdfout{display:grid;gap:8px;margin-top:10px}
   .pdfout .row{display:flex;gap:8px}
   .pdfout .row>*{flex:1}
@@ -124,7 +122,7 @@
 <section id="tab-calc">
   <div class="card">
     <div class="seg" id="tipoSeg">
-      <button type="button" data-t="C100">C100<small>corto · 7:15</small></button>
+      <button type="button" data-t="C100">C100<small>1 o más días · 7:15</small></button>
       <button type="button" data-t="C200_1" class="on">C200<small>1 día · 12:00</small></button>
       <button type="button" data-t="C200_2">C200<small>2 días · 10:00</small></button>
     </div>
@@ -203,6 +201,10 @@
       <div class="btns" style="margin-top:10px">
         <button class="btn ghost" id="regNuevo" type="button">＋ Nuevo viático</button>
         <button class="btn pri" id="regPdf" type="button">Generar PDF del mes</button>
+      </div>
+      <div class="adjbox" style="margin-top:12px">
+        <div class="adjhead"><b>Marcas del mes</b><label class="gps">＋ PDF de la intranet<input id="mesMarcasIn" type="file" accept="application/pdf" hidden></label></div>
+        <div id="mesMarcas" class="note"></div>
       </div>
       <div id="regPdfOut"></div>
     </div>
@@ -284,10 +286,13 @@
   <form id="vForm">
     <h3 id="vTitle">Viático</h3>
     <div class="seg" id="vTipo" style="grid-template-columns:1fr 1fr;margin-bottom:12px">
-      <button type="button" data-t="C100">C100<small>corto</small></button>
+      <button type="button" data-t="C100">C100<small>1 o más días</small></button>
       <button type="button" data-t="C200">C200<small>1 o más días</small></button>
     </div>
-    <div class="f"><label for="vLoc">Localidad</label><input id="vLoc" list="dlLocNames" maxlength="40" required></div>
+    <div class="g2 f">
+      <div><label for="vLocDep">Departamento</label><select id="vLocDep"></select></div>
+      <div><label for="vLocSel">Localidad</label><select id="vLocSel"></select></div>
+    </div>
     <div class="g2 f">
       <div><label for="vFIni">Fecha comienzo</label><input id="vFIni" type="date" required></div>
       <div><label for="vHIni">Hora comienzo</label><input id="vHIni" type="time"></div>
@@ -306,11 +311,6 @@
       </div>
       <div class="hint" id="vCalcHint">Hora comienzo = marca − viaje · Hora finalización = marca + viaje</div>
     </details>
-    <div class="adjbox">
-      <div class="adjhead"><b>Marcas de la intranet</b><label class="gps">＋ PDF o captura<input id="vMarcaIn" type="file" accept="application/pdf,image/*" hidden></label></div>
-      <div id="vMarcas" class="adjlist"></div>
-    </div>
-
     <label class="chk"><input type="checkbox" id="vTLoco"> Tiene locomoción</label>
     <div class="adjbox hide" id="vLocoBox">
       <div class="f"><label for="vLoco">Monto locomoción $</label><input id="vLoco" type="number" inputmode="decimal" min="0" step="1" value="0"></div>
@@ -335,24 +335,7 @@
     </div>
   </form>
 </dialog>
-<datalist id="dlLocNames"></datalist>
 
-<dialog id="dlgCrop" class="full">
-  <div style="padding:12px">
-    <h3 style="margin:0 0 4px">Recortar marcas</h3>
-    <p class="note" style="margin:0 0 8px">Arrastrá los bordes del recuadro para dejar solo lo que va en la planilla.</p>
-    <div id="cropWrap" class="cropwrap"><canvas id="cropCv"></canvas></div>
-    <div class="mesbar" id="cropPages" style="margin:8px 0">
-      <button class="gps" id="cropPrev" type="button">‹ Página</button><span class="note" id="cropPg"></span><button class="gps" id="cropNext" type="button">Página ›</button>
-    </div>
-    <div class="hint" id="cropMsg"></div>
-    <div class="btns">
-      <button class="btn pri" id="cropAdd" type="button">Agregar este recorte</button>
-      <button class="btn ghost" id="cropAll" type="button">Usar la página entera</button>
-      <button class="btn ghost" id="cropDone" type="button">Listo</button>
-    </div>
-  </div>
-</dialog>
 
 <script>
 /* ===================== CONFIG =====================
@@ -386,7 +369,7 @@ const SEED = [
 ].map(r=>({id:'',departamento:r[0],localidad:r[1],horas:r[2],lat:r[3],lng:r[4]}));
 
 const REQ_DEFAULT = {C100:'07:15', C200_1:'12:00', C200_2:'10:00'};
-const TIPOS = {C100:'C100 corto', C200_1:'C200 1 día', C200_2:'C200 2 días'};
+const TIPOS = {C100:'C100', C200_1:'C200 1 día', C200_2:'C200 2 o más días'};
 const GPS_MAX_KM = 30;
 
 /* ---------- storage seguro (solo ajustes y caché de localidades) ---------- */
@@ -709,7 +692,7 @@ function loadCfg(){
   $('autoGps').checked=LS.get('hs_autogps',true);
   $('apiUrl').value=apiUrl;
   $('apiHint').textContent = apiUrl? '' : 'Sin esta URL la lista se lee de la planilla, pero se edita solo desde la planilla.';
-  document.querySelectorAll('#tipoSeg button').forEach(b=>{ b.querySelector('small').textContent=({C100:'corto',C200_1:'1 día',C200_2:'2 días'})[b.dataset.t]+' · '+dur(toMin(req[b.dataset.t])); });
+  document.querySelectorAll('#tipoSeg button').forEach(b=>{ b.querySelector('small').textContent=({C100:'1 o más días',C200_1:'1 día',C200_2:'2 o más días'})[b.dataset.t]+' · '+dur(toMin(req[b.dataset.t])); });
 }
 $('waNum').addEventListener('input', ()=>{ if($('waRemember').checked) LS.set('hs_wa',$('waNum').value.replace(/\D/g,'')); render(); });
 $('waRemember').addEventListener('change', e=>{ if(e.target.checked) LS.set('hs_wa',$('waNum').value.replace(/\D/g,'')); else LS.del('hs_wa'); });
