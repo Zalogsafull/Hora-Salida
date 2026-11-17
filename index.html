@@ -229,7 +229,8 @@
         <button class="gps" id="mesNext" type="button" aria-label="Mes siguiente">›</button>
       </div>
       <label class="btn ghost" style="margin:10px 0 4px">📄 Subir PDF de marcas del mes<input id="mesMarcasIn" type="file" accept="application/pdf" hidden></label>
-      <div id="mesMarcas" class="note" style="text-align:center;margin-bottom:6px"></div>
+      <div id="mesMarcas" class="note" style="text-align:center"></div>
+      <div id="mesMarcasInfo" class="note" style="text-align:center;margin-bottom:6px"></div>
       <div id="regLista"></div>
       <p class="note" style="margin:6px 2px 0">Tocá un viático para editarlo o eliminarlo.</p>
       <div class="btns" style="margin-top:10px">
@@ -761,6 +762,6 @@ if('serviceWorker' in navigator && location.protocol==='https:' && /github\.io$/
 }
 loadLocs().then(()=>{ if(LS.get('hs_autogps',true)) locate(); });
 </script>
-<script src="viaticos.js?v=15"></script>
+<script src="viaticos.js?v=17"></script>
 </body>
 </html>

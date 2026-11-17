@@ -555,11 +555,112 @@ async function subirComps(files, clase, item){
 let _pdfjs=null;
 function cargarScript(src){ return new Promise((ok,mal)=>{ const s=document.createElement('script'); s.src=src; s.onload=ok; s.onerror=()=>mal(new Error('No se pudo cargar '+src)); document.head.appendChild(s); }); }
 async function pdfjs(){ if(!_pdfjs) _pdfjs=cargarScript('lib/pdf.min.js').then(()=>{ pdfjsLib.GlobalWorkerOptions.workerSrc='lib/pdf.worker.min.js'; return pdfjsLib; }); return _pdfjs; }
+
+/* ---------------- lectura del PDF de marcas del mes (OCR) ----------------
+   El PDF de la intranet viene como imagen: se lee con Tesseract dentro del teléfono,
+   se ubican las filas de la tabla "Marcas SAP" por su fecha y se recortan las del viático. */
+const OCR={worker:null, cache:{}};
+const absUrl = p => new URL(p, location.href).href;
+async function ocrWorker(){
+  if(OCR.worker) return OCR.worker;
+  OCR.worker=(async()=>{
+    await cargarScript('lib/tesseract/tesseract.min.js');
+    return await Tesseract.createWorker('eng',1,{workerPath:absUrl('lib/tesseract/worker.min.js'), corePath:absUrl('lib/tesseract/'), langPath:absUrl('lib/tesseract'), gzip:true});
+  })();
+  OCR.worker.catch(()=>{ OCR.worker=null; });
+  return OCR.worker;
+}
+const isoDe = t => { const m=/(\d{2})[\/\-.](\d{2})[\/\-.](\d{4})/.exec(t||''); return m ? m[3]+'-'+m[2]+'-'+m[1] : null; };
+async function analizarPagina(cv, w){
+  const {data}=await w.recognize(cv,{},{blocks:true});
+  const ws=[]; for(const b of data.blocks||[]) for(const p of b.paragraphs) for(const l of p.lines) for(const x of l.words) ws.push({t:x.text, x0:x.bbox.x0, y0:x.bbox.y0, x1:x.bbox.x1, y1:x.bbox.y1});
+  const sap=ws.find((x,i)=>/^SAP$/i.test(x.t) && ws[i-1] && /^Marcas$/i.test(ws[i-1].t));
+  const titulo = sap ? ws[ws.indexOf(sap)-1] : null;
+  const desdeY = titulo ? titulo.y1 : 0;
+  let fechas=ws.filter(x=>x.y0>desdeY && isoDe(x.t));
+  if(!fechas.length) return {filas:[], titulo:null};
+  const xmin=Math.min(...fechas.map(x=>x.x0)); fechas=fechas.filter(x=>x.x0<xmin+40).sort((a,b)=>a.y0-b.y0);
+  const cab = titulo ? ws.find(x=>/^Fecha$/i.test(x.t) && x.y0>titulo.y1 && x.y1<fechas[0].y0) : null;
+  const colHoras = titulo ? ws.find(x=>/^Horas$/i.test(x.t) && x.y0>titulo.y1 && x.y1<fechas[0].y0) : null;
+  const cs=fechas.map(x=>(x.y0+x.y1)/2), dif=[]; for(let i=1;i<cs.length;i++) dif.push(cs[i]-cs[i-1]);
+  dif.sort((a,b)=>a-b);
+  const paso = dif.length ? dif[Math.floor(dif.length/2)] : (cab ? (cs[0]-(cab.y0+cab.y1)/2) : 60);
+  const filas=fechas.map((x,i)=>{
+    const yc=cs[i], y0=yc-paso/2, y1=yc+paso/2;
+    let horas=null;
+    if(colHoras){ const hc=(colHoras.x0+colHoras.x1)/2; const h=ws.find(z=>z.y0>y0 && z.y1<y1 && Math.abs((z.x0+z.x1)/2-hc)<45 && /^\d{1,3}:\d{2}$/.test(z.t)); if(h) horas=h.t; }
+    return {f:isoDe(x.t), y0:Math.max(0,y0), y1:Math.min(cv.height,y1), horas};
+  });
+  const enTabla=ws.filter(z=>z.y0>=(titulo?titulo.y0:filas[0].y0) && z.y1<=filas[filas.length-1].y1);
+  const x0=Math.max(0, Math.min(...enTabla.map(z=>z.x0))-28), x1=Math.min(cv.width, Math.max(...enTabla.map(z=>z.x1))+28);
+  return {filas, x0, x1, titulo: titulo ? {y0:Math.max(0,titulo.y0-22), y1: filas[0].y0} : null};
+}
+function analizarMarcas(driveId){
+  if(OCR.cache[driveId]) return OCR.cache[driveId];
+  const pr=(async()=>{
+    const blob=await bajar(driveId), lib=await pdfjs(), w=await ocrWorker();
+    const doc=await lib.getDocument({data:new Uint8Array(await blob.arrayBuffer())}).promise;
+    const paginas=[];
+    for(let n=1;n<=doc.numPages;n++){
+      const pg=await doc.getPage(n), vp=pg.getViewport({scale:200/72});
+      const cv=document.createElement('canvas'); cv.width=Math.round(vp.width); cv.height=Math.round(vp.height);
+      const c=cv.getContext('2d'); c.fillStyle='#fff'; c.fillRect(0,0,cv.width,cv.height);
+      await pg.render({canvasContext:c, viewport:vp}).promise;
+      const r=await analizarPagina(cv,w); r.cv=cv; paginas.push(r);
+    }
+    return paginas;
+  })();
+  OCR.cache[driveId]=pr; pr.catch(()=>{ delete OCR.cache[driveId]; });
+  return pr;
+}
+function mesesDe(v){ const out=[]; const a=(v.fIni||'').slice(0,7), b=(v.fFin||v.fIni||'').slice(0,7); if(a) out.push(a); if(b && b!==a) out.push(b); return out; }
+const sumaHoras = hs => { let m=0; for(const h of hs){ const x=/^(\d+):(\d{2})$/.exec(h||''); if(x) m+=(+x[1])*60+(+x[2]); } return String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0'); };
+// imagen como la consulta de la intranet filtrada por las fechas del viático: encabezado + "Marcas SAP" + filas de esos días
+async function imagenMarcasViatico(v){
+  const paginas=[];
+  for(const m of mesesDe(v)){ const x=(R.datos.marcasMes||{})[m]; if(x && x.drive) paginas.push(...await analizarMarcas(x.drive)); }
+  if(!paginas.length) return null;
+  const fin=v.fFin||v.fIni, filas=[];
+  for(const p of paginas) for(const f of p.filas) if(f.f>=v.fIni && f.f<=fin) filas.push({p,f});
+  const base=paginas.find(p=>p.titulo) || paginas[0];
+  const W=Math.max(...[base, ...filas.map(x=>x.p)].map(p=>p.x1-p.x0));
+  const k=base.cv.width/1700, cabH=Math.round(330*k);
+  const tit = base.titulo ? base.titulo.y1-base.titulo.y0 : 0;
+  const H=cabH+tit+filas.reduce((s,x)=>s+(x.f.y1-x.f.y0),0)+Math.round(20*k);
+  const cv=document.createElement('canvas'); cv.width=W; cv.height=H;
+  const c=cv.getContext('2d'); c.fillStyle='#fff'; c.fillRect(0,0,W,H);
+  // encabezado de la consulta
+  const fuente=(px,bold)=>(bold?'600 ':'')+Math.round(px*k)+'px "Segoe UI", Arial, sans-serif';
+  const px=Math.round(28*k), bw=Math.min(W-2*px, Math.round(760*k)), bh=Math.round(46*k);
+  c.fillStyle='#222'; c.font=fuente(22); c.textBaseline='middle';
+  const caja=(y,txt)=>{ c.strokeStyle='#ced4da'; c.lineWidth=Math.max(1,2*k); c.beginPath(); c.roundRect? c.roundRect(px,y,bw,bh,6*k) : c.rect(px,y,bw,bh); c.stroke(); c.fillStyle='#495057'; c.font=fuente(19); c.fillText(txt,px+Math.round(14*k),y+bh/2); };
+  c.fillText('Fecha Desde:',px,Math.round(30*k)); caja(Math.round(52*k), fDMY(v.fIni));
+  c.fillStyle='#222'; c.font=fuente(22); c.fillText('Fecha Hasta:',px,Math.round(128*k)); caja(Math.round(150*k), fDMY(fin));
+  c.strokeStyle='#4a6fa5'; c.lineWidth=Math.max(1,2*k); c.strokeRect(px,Math.round(208*k),Math.round(98*k),Math.round(38*k));
+  c.fillStyle='#8a94a6'; c.font=fuente(17); c.fillText('Consultar',px+Math.round(12*k),Math.round(227*k));
+  c.fillStyle='#222'; c.font=fuente(18); c.fillText('🕓 Total Horas Realizadas: '+sumaHoras(filas.map(x=>x.f.horas)),px-Math.round(10*k),Math.round(296*k));
+  let y=cabH;
+  if(base.titulo){ c.drawImage(base.cv, base.x0, base.titulo.y0, W, tit, 0, y, W, tit); y+=tit; }
+  for(const {p,f} of filas){ const h=f.y1-f.y0; c.drawImage(p.cv, p.x0, f.y0, W, h, 0, y, W, h); y+=h; }
+  return {cv, fw: W/base.cv.width, n:filas.length};
+}
+async function estadoMarcasMes(){
+  const m=(R.datos.marcasMes||{})[R.mes], el=$('mesMarcasInfo'); if(!el) return;
+  if(!m || !m.drive){ el.textContent=''; return; }
+  el.textContent='Leyendo las marcas del PDF…';
+  try{
+    const pags=await analizarMarcas(m.drive), dias=[...new Set(pags.flatMap(p=>p.filas.map(f=>f.f)))].sort();
+    if((R.datos.marcasMes||{})[R.mes]!==m) return;
+    el.textContent = dias.length ? dias.length+' día(s) con marcas: '+dias.map(d=>d.slice(8,10)).join(', ') : 'No se encontraron marcas en el PDF. ¿Es la impresión de "Marcas SAP"?';
+  }catch(e){ el.textContent='No se pudo leer el PDF de marcas.'; }
+}
+
 function pintarMarcasMes(){
   const m=(R.datos.marcasMes||{})[R.mes];
   $('mesMarcas').innerHTML = m && m.drive
     ? '📄 '+esc(m.nombre||'marcas.pdf')+' <button class="lnk" type="button" id="mesMarcasDel" style="width:auto;display:inline;padding:0 0 0 8px">Quitar</button>'
     : 'Subí el PDF con todas las marcas del mes (impreso desde la intranet).';
+  estadoMarcasMes();
   const d=$('mesMarcasDel'); if(d) d.onclick=()=>{ const x=R.datos.marcasMes[R.mes]; if(x&&x.drive) borrarDrive(x.drive); R.datos.marcasMes[R.mes]={t:Date.now()}; cambio(); };
 }
 $('mesMarcasIn').addEventListener('change', async e=>{
@@ -618,10 +719,20 @@ async function bloque(pdf, tipo, lista, F){
   const M=36, ancho=A4[0]-2*M;
   let pg=null, y=0;
   const nuevaHoja=()=>{ pg=pdf.addPage(A4); pg.drawText(tipo,{x:12,y:A4[1]-16,size:7,font:F.r}); y=A4[1]-40; };
-  const hayMarcas = lista.some(v=>(v.adj||[]).some(a=>a.clase==='marca'));
+  const hayMarcas = lista.some(v=>(v.adj||[]).some(a=>a.clase==='marca') || mesesDe(v).some(m=>((R.datos.marcasMes||{})[m]||{}).drive));
   if(lista.length){
     nuevaHoja();
     for(const v of lista){
+      try{
+        const im=await imagenMarcasViatico(v);
+        if(im){
+          const b=await new Promise(ok=>im.cv.toBlob(ok,'image/jpeg',0.9)); const img=await pdf.embedJpg(new Uint8Array(await b.arrayBuffer()));
+          let w=Math.min(ancho, im.fw*A4[0]*0.97), h=img.height*w/img.width;
+          if(h>A4[1]-80){ h=A4[1]-80; w=img.width*h/img.height; }
+          if(y-h<50) nuevaHoja();
+          pg.drawImage(img,{x:M,y:y-h,width:w,height:h}); y-=h+14;
+        }
+      }catch(e){ console.error(e); }
       const marcas=(v.adj||[]).filter(a=>a.clase==='marca');
       for(const a of marcas){
         let img; try{ const b=await bajar(a.drive); const bytes=new Uint8Array(await b.arrayBuffer()); img = a.mime==='image/png' ? await pdf.embedPng(bytes) : await pdf.embedJpg(bytes); }catch(e){ continue; }
