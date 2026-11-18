@@ -47,25 +47,30 @@ const interCuenta = v => v.tipo==='C100' && !!v.tInter && (v.inter||[]).some(p=>
 // nombre corto de la localidad de la marca de salida
 function locSalida(v){ const l=v.cSalLoc&&!String(v.cSalLoc).startsWith('otra:')?byId(v.cSalLoc):null; return l?corto(l.localidad):''; }
 function interOrdenadas(v){ return (v.inter||[]).filter(p=>p.h).sort((a,b)=>((a.f||'')+a.h).localeCompare((b.f||'')+b.h)); }
-// C100: un renglón por localidad, en el orden en que se recorren.
-//   entrada (localidad de entrada, termina en la marca de entrada) → marcas intermedias
-//   (cada una termina en su marca; seguidas en la misma localidad se juntan) → salida (termina en la finalización).
-//   Cada renglón empieza donde terminó el anterior. Si todo es la misma localidad, queda un solo renglón.
-function tramosC100(v){
-  if(v.tipo!=='C100' || !v.cEnt) return null;
-  const segs=[], add=(loc,fin)=>{ const u=segs[segs.length-1]; if(u && norm(u.loc)===norm(loc)) u.fin=fin; else segs.push({loc,fin}); };
-  add(v.localidad, {f:v.fIni,h:v.cEnt});
-  if(interCuenta(v)) for(const p of interOrdenadas(v)) add(p.loc||v.localidad, {f:p.f||v.fIni,h:p.h});
-  add(locSalida(v)||v.localidad, {f:v.fFin,h:v.hFin});
-  if(segs.length<2) return null;
-  let ini={f:v.fIni,h:v.hIni};
-  return segs.map(sg=>{ const par=[{loc:sg.loc,...ini}, sg.fin]; ini=sg.fin; return par; });
-}
+// Renglones de la planilla.
+// C100: los nodos en orden cronológico son comienzo → (marca de entrada, si hay más de una localidad) →
+// marcas intermedias → finalización. Toda marca intermedia cargada aparece en algún renglón.
+//   · Cada renglón va de un nodo al siguiente y lleva la localidad de la marca donde termina.
+//   · Dos marcas del mismo día y la misma localidad van juntas en un renglón (no se repiten).
+//   · Si cambia la localidad, o una marca queda sola, se repite: cierra un renglón y abre el siguiente.
+//   · Sin marcas intermedias y en una sola localidad: un solo renglón.
 function renglones(v){
-  const t=tramosC100(v);
-  if(t) return formatear(v, t);                 // varias localidades
-  if(interCuenta(v)) return renglonesInter(v);  // misma localidad con marcas intermedias: se agrupan por día
-  return formatear(v, [[{loc:v.localidad,f:v.fIni,h:v.hIni},{f:v.fFin,h:v.hFin}]]);
+  const ini={loc:v.localidad,f:v.fIni,h:v.hIni}, fin={loc:locSalida(v)||v.localidad,f:v.fFin,h:v.hFin};
+  const inter = interCuenta(v) ? interOrdenadas(v).map(p=>({loc:p.loc||v.localidad, f:p.f||v.fIni, h:p.h})) : [];
+  const lugares=new Set([ini.loc, fin.loc, ...inter.map(p=>p.loc)].map(x=>norm(x||'')));
+  const varias = v.tipo==='C100' && !!v.cEnt && lugares.size>1;
+  if(!varias && !inter.length) return formatear(v, [[ini,fin]]);
+  const marcas=[...(varias?[{loc:v.localidad,f:v.fIni,h:v.cEnt}]:[]), ...inter].sort((a,b)=>((a.f||'')+a.h).localeCompare((b.f||'')+b.h));
+  const n=[ini, ...marcas, fin], N=n.length;
+  const mismoDia=(x,y)=>x&&y&&(x.f||'')===(y.f||''), mismoLugar=(x,y)=>x&&y&&norm(x.loc||'')===norm(y.loc||'');
+  const restanDia=k=>{ let c=0; for(let t=k;t<N && mismoDia(n[t],n[k]);t++) c++; return c; };
+  const pares=[]; let i=0;
+  while(i<N-1){
+    const a=n[i], b=n[i+1]; pares.push([{loc:b.loc,f:a.f,h:a.h}, b]);
+    const c=n[i+2];
+    i = (c && mismoLugar(b,c) && restanDia(i+2)>=2 && (mismoDia(b,c) || mismoDia(a,b))) ? i+2 : i+1;
+  }
+  return formatear(v, pares);
 }
 function formatear(v, pares){
   const alo=alojEnRenglones(v,pares);
@@ -87,21 +92,6 @@ function alojEnRenglones(v, pares){
     out[k]+=(+a.monto);
   }
   return out;
-}
-function renglonesInter(v){
-  const pts=(v.inter||[]).filter(p=>p.h).sort((a,b)=>((a.f||'')+a.h).localeCompare((b.f||'')+b.h));
-  const nodos=[{loc:v.localidad,f:v.fIni,h:v.hIni}, ...pts.map(p=>({loc:p.loc||v.localidad,f:p.f||v.fIni,h:p.h})), {f:v.fFin,h:v.hFin}];
-  // Marcas del mismo día van juntas en un renglón (entrada → salida de ese día).
-  // Una marca que queda sola en su día se repite: cierra un renglón y abre el siguiente.
-  const n=nodos.length, mismo=(x,y)=>x&&y&&(x.f||'')===(y.f||'');
-  const restanDia=k=>{ let c=0; for(let t=k;t<n && mismo(nodos[t],nodos[k]);t++) c++; return c; };
-  const pares=[]; let i=0;
-  while(i<n-1){
-    const a=nodos[i], b=nodos[i+1]; pares.push([a,b]);
-    const c=nodos[i+2];
-    i = (c && restanDia(i+2)>=2 && (mismo(b,c) || mismo(a,b))) ? i+2 : i+1;
-  }
-  return formatear(v, pares);
 }
 function guardarLocal(){ LS.set(K.datos, R.datos); }
 function viaticos(){ return Object.values(R.datos.v||{}); }
