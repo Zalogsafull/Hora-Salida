@@ -140,6 +140,19 @@
   .pdfout .row{display:flex;gap:8px}
   .pdfout .row>*{flex:1;padding:12px 6px}
   #pdfPaginas canvas{display:block;width:100%;height:auto;margin:0 auto 8px;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.4)}
+  .guia{padding:14px 16px 16px;display:flex;flex-direction:column;max-height:92vh}
+  .guia-top{display:flex;justify-content:space-between;align-items:center}
+  .guia-cuerpo{overflow:auto;padding:4px 2px}
+  .guia-cuerpo .ico{font-size:40px;line-height:1;margin:6px 0 8px}
+  .guia-cuerpo h3{margin:0 0 8px;font-size:20px}
+  .guia-cuerpo p{margin:0 0 8px;line-height:1.45}
+  .guia-cuerpo ul{margin:0 0 8px;padding-left:20px;line-height:1.45}
+  .guia-cuerpo li{margin-bottom:4px}
+  .guia-cuerpo .tip{background:var(--soft);border-radius:10px;padding:8px 10px;font-size:13.5px;margin-top:6px}
+  .guia-puntos{display:flex;justify-content:center;gap:6px;margin:10px 0}
+  .guia-puntos i{width:8px;height:8px;border-radius:50%;background:var(--line)}
+  .guia-puntos i.on{background:var(--pri2);width:20px;border-radius:4px}
+  .guia-nav{display:grid;grid-template-columns:1fr 1.4fr;gap:8px}
   .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#14202b;color:#fff;padding:10px 16px;border-radius:10px;font-size:14px;z-index:20;max-width:90vw}
 </style>
 </head>
@@ -264,6 +277,10 @@
 
 <!-- ============ AJUSTES ============ -->
 <section id="tab-cfg" class="hide">
+  <div class="card">
+    <h2>Ayuda</h2>
+    <button class="btn ghost" id="btnGuia" type="button">📖 Ver instructivo</button>
+  </div>
   <div class="card">
     <h2>WhatsApp</h2>
     <div class="f">
@@ -392,6 +409,15 @@
       <button class="gps" type="button" id="pdfCerrar">Cerrar</button>
     </div>
     <div id="pdfPaginas" style="flex:1;overflow:auto;background:#666;padding:8px"></div>
+  </div>
+</dialog>
+
+<dialog id="dlgGuia" class="full">
+  <div class="guia">
+    <div class="guia-top"><span id="guiaPaso" class="note"></span><button type="button" class="cerrar" id="guiaCerrar" aria-label="Cerrar instructivo">×</button></div>
+    <div id="guiaCuerpo" class="guia-cuerpo"></div>
+    <div id="guiaPuntos" class="guia-puntos"></div>
+    <div class="guia-nav"><button class="btn ghost" type="button" id="guiaAtras">Atrás</button><button class="btn pri" type="button" id="guiaSig">Siguiente</button></div>
   </div>
 </dialog>
 
@@ -766,11 +792,60 @@ $('btnReload').addEventListener('click', loadLocs);
 
 /* ---------- inicio ---------- */
 loadCfg(); renderLocs();
+
+/* ---------- instructivo (se muestra la primera vez; después desde Ajustes) ---------- */
+const GUIA=[
+ {i:'🕒', t:'Hora Salida', h:`<p>Calcula a qué hora podés hacer la marca de salida en tus viáticos y, si querés, lleva el registro del mes y arma el PDF para tu jefe.</p>
+   <ul><li><b>Calcular</b>: la cuenta del día.</li><li><b>Viáticos</b>: tu registro mensual (opcional, con Google).</li><li><b>Localidades</b>: horas de viaje de cada lugar.</li><li><b>Ajustes</b>: WhatsApp, horas a cumplir y este instructivo.</li></ul>`},
+ {i:'🧮', t:'Calcular', h:`<ul><li>Elegí el tipo: <b>C100</b> (1 o más días · 7:15), <b>C200 1 día</b> (12:00) o <b>C200 2 o más días</b> (10:00 el día de la vuelta).</li>
+   <li>Elegí departamento y ciudad de la <b>entrada</b> y cargá tu <b>marca de entrada</b>. Si estás cerca de una localidad de la lista, se elige sola por ubicación.</li>
+   <li>Elegí la ciudad de <b>salida</b>: abajo aparece desde qué hora podés hacer la marca de salida.</li></ul>
+   <div class="tip">Hora de entrada = marca − viaje de ida · Marca de salida desde = hora de entrada + horas a cumplir − viaje de vuelta.</div>`},
+ {i:'📤', t:'Enviar y guardar', h:`<ul><li><b>Enviar registro por WhatsApp</b> manda el resumen al número que pongas en Ajustes.</li>
+   <li><b>Guardar viático</b> lo pasa a tu registro del mes con la entrada ya calculada.</li></ul>
+   <div class="tip">Sin iniciar sesión no se guarda nada: las horas quedan solo en la pantalla.</div>`},
+ {i:'📋', t:'Mis viáticos', h:`<ul><li>Entrá a <b>Viáticos → Iniciar sesión con Google</b>. Todo se guarda en la carpeta <b>Hora Salida</b> de tu Drive; nadie más lo ve.</li>
+   <li>Tocá un viático para editarlo. Cargás la <b>marca de entrada</b> y la <b>de salida</b> (al otro día, si es de 2 días); las horas de comienzo y finalización se calculan solas.</li>
+   <li>Cada viático muestra <b>✓</b> si está bien o <b>!</b> con lo que hay que revisar (horas, marcas, comprobantes, superposición).</li></ul>`},
+ {i:'🚌', t:'Locomoción y alojamiento', h:`<ul><li>Tildá <b>Tiene locomoción</b>: cada una es <b>Ida</b> (primer día) o <b>Vuelta</b> (último día), con monto y comprobante.</li>
+   <li>Tildá <b>Tiene alojamiento</b>: día, monto y factura. Solo se cobra en <b>C100</b>; en C200 queda guardado pero no va al PDF.</li>
+   <li>El comprobante se sube en el recuadro punteado (foto o PDF).</li></ul>`},
+ {i:'🧾', t:'Renglones de la planilla', h:`<ul><li><b>C200</b>: un renglón, del comienzo a la finalización.</li>
+   <li><b>C100 en una sola localidad</b>: un renglón.</li>
+   <li><b>C100 con otra localidad de salida</b>: se parte en la marca de entrada, un renglón por localidad.</li>
+   <li><b>Marcas intermedias</b> (solo C100): siempre aparecen, en orden; las del mismo día y lugar van juntas, y si cambia el lugar o queda una sola, se repite.</li>
+   <li>Locomoción de ida en el primer renglón y de vuelta en el último; alojamiento en el del medio o en el de su día. Lo vacío va en 0.</li></ul>`},
+ {i:'📄', t:'Fin de mes', h:`<ul><li>En Viáticos, <b>Subir PDF de marcas del mes</b> (la impresión de la intranet). La app lo lee y te dice qué días encontró.</li>
+   <li>Compara tus marcas con las de la intranet y avisa si difieren más de 10 minutos.</li>
+   <li><b>Generar PDF del mes</b>: planilla, marcas de cada viático (filtradas por sus fechas) y comprobantes. Con C100 y C200 salen dos: <b>solo C100</b> y <b>C100 + C200</b>.</li>
+   <li><b>Ver</b>, <b>Descargar</b> o <b>Compartir</b>.</li></ul>`},
+ {i:'📍', t:'Localidades e instalación', h:`<ul><li>La lista de localidades es compartida (planilla de Google): lo que cambies lo ven todos.</li>
+   <li>Para tenerla como app: en Chrome, menú ⋮ → <b>Instalar app</b>; en iPhone, Compartir → <b>Agregar a inicio</b>.</li></ul>
+   <div class="tip">Podés volver a ver este instructivo en <b>Ajustes → Ver instructivo</b>.</div>`}
+];
+let guiaI=0;
+function pintarGuia(){
+  const g=GUIA[guiaI];
+  $('guiaCuerpo').innerHTML='<div class="ico">'+g.i+'</div><h3>'+g.t+'</h3>'+g.h;
+  $('guiaPaso').textContent=(guiaI+1)+' de '+GUIA.length;
+  $('guiaPuntos').innerHTML=GUIA.map((_,k)=>'<i class="'+(k===guiaI?'on':'')+'"></i>').join('');
+  $('guiaAtras').style.visibility = guiaI ? 'visible' : 'hidden';
+  $('guiaSig').textContent = guiaI===GUIA.length-1 ? 'Empezar' : 'Siguiente';
+  $('guiaCuerpo').scrollTop=0;
+}
+function abrirGuia(){ guiaI=0; pintarGuia(); try{ $('dlgGuia').showModal(); }catch(e){} }
+function cerrarGuia(){ LS.set('hs_guia_vista',1); $('dlgGuia').close(); }
+$('guiaSig').addEventListener('click',()=>{ if(guiaI<GUIA.length-1){ guiaI++; pintarGuia(); } else cerrarGuia(); });
+$('guiaAtras').addEventListener('click',()=>{ if(guiaI>0){ guiaI--; pintarGuia(); } });
+$('guiaCerrar').addEventListener('click',cerrarGuia);
+$('dlgGuia').addEventListener('cancel',()=>LS.set('hs_guia_vista',1));
+$('btnGuia').addEventListener('click',abrirGuia);
+if(!LS.get('hs_guia_vista',0)) setTimeout(abrirGuia,400);
 if('serviceWorker' in navigator && location.protocol==='https:' && /github\.io$/.test(location.hostname)){
   try{ navigator.serviceWorker.register('sw.js').catch(()=>{}); }catch(e){}
 }
 loadLocs().then(()=>{ if(LS.get('hs_autogps',true)) locate(); });
 </script>
-<script src="viaticos.js?v=25"></script>
+<script src="viaticos.js?v=26"></script>
 </body>
 </html>
