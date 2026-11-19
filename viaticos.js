@@ -813,7 +813,9 @@ function locEntrada(v){ return (v.cEntLoc && byId(v.cEntLoc)) || locs.find(l=>no
 async function completarDesdeIntranet(){
   let n=0;
   for(const v of delMes(R.mes)){
-    if(v.cSal) continue;                                   // ya lo terminaste vos: queda como está
+    // lo que cargaste vos no se toca; en un C100 sin marcas intermedias se agregan las de otras ciudades
+    const faltaC100 = v.tipo==='C100' && !(v.inter||[]).length;
+    if(v.cSal && !faltaC100) continue;
     if(!mesesDe(v).some(m=>((R.datos.marcasMes||{})[m]||{}).drive)) continue;
     const fin=v.fFin||v.fIni;
     const filas=(await marcasIntranet(v)).filter(r=>r.f>=v.fIni && r.f<=fin).sort((a,b)=>(a.f+(a.ent||'')).localeCompare(b.f+(b.ent||'')));
@@ -823,13 +825,17 @@ async function completarDesdeIntranet(){
     const x={...v}, auto=[];
     const primera=marcas[0], ultima=marcas[marcas.length-1];
     if(!x.cEnt && primera.f===x.fIni){ x.cEnt=primera.h; auto.push('entrada'); if(!x.cEntLoc){ const l=locDeOrigen(primera.o); if(l){ x.cEntLoc=l.id; if(!x.localidad) x.localidad=corto(l.localidad); } } }
-    if(ultima.tipo==='s' && ultima.f===fin && marcas.length>1){
+    if(!x.cSal && ultima.tipo==='s' && ultima.f===fin && marcas.length>1){
       x.cSal=ultima.h; auto.push('salida');
       const l=locDeOrigen(ultima.o); if(l) x.cSalLoc=l.id;
-      if(x.tipo==='C100' && !(x.inter||[]).length){
-        const medio=marcas.slice(1,-1);
-        if(medio.length){ x.tInter=true; x.inter=medio.map(m=>{ const lm=locDeOrigen(m.o); return {loc: lm?corto(lm.localidad):x.localidad, f:m.f, h:m.h}; }); auto.push('marcas intermedias'); }
-      }
+    }
+    // C100: si en el medio hay marcas en otra ciudad (distinta de la de entrada y la de salida), se agregan
+    // como marcas intermedias para que la planilla tenga un renglón por cada ciudad
+    if(x.tipo==='C100' && !(x.inter||[]).length && marcas.length>2){
+      const medio=marcas.slice(1,-1).map(m=>{ const lm=locDeOrigen(m.o); return {loc: lm?corto(lm.localidad):x.localidad, f:m.f, h:m.h}; });
+      const le0=locEntrada(x), ls0=(x.cSalLoc&&byId(x.cSalLoc))||le0;
+      const yaEstan=[le0?corto(le0.localidad):x.localidad, ls0?corto(ls0.localidad):''].map(z=>norm(z||''));
+      if(medio.some(m=>!yaEstan.includes(norm(m.loc)))){ x.tInter=true; x.inter=medio; auto.push('marcas intermedias'); }
     }
     if(!auto.length) continue;
     const le=locEntrada(x), ls=(x.cSalLoc&&byId(x.cSalLoc))||le;
