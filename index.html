@@ -783,7 +783,7 @@ const GUIA=[
  {i:'🧾', t:'Renglones de la planilla', h:`<ul><li><b>C200</b>: un renglón, del comienzo a la finalización.</li>
    <li><b>C100 en una sola localidad</b>: un renglón.</li>
    <li><b>C100 con otra localidad de salida</b>: se parte en la marca de entrada, un renglón por localidad.</li>
-   <li><b>Marcas intermedias</b> (solo C100): siempre aparecen, en orden; las del mismo día y lugar van juntas, y si cambia el lugar o queda una sola, se repite.</li>
+   <li><b>C100 en varias ciudades</b>: un renglón por ciudad; cada uno termina en la última marca hecha en esa ciudad (aunque sea al otro día) y el siguiente la repite.</li><li><b>C100 en una ciudad con marcas intermedias</b>: las del mismo día van juntas; si queda una sola, se repite.</li>
    <li>Locomoción de ida en el primer renglón y de vuelta en el último; alojamiento en el del medio o en el de su día. Lo vacío va en 0.</li></ul>`},
  {i:'📄', t:'Fin de mes', h:`<ul><li>En Viáticos, <b>Subir PDF de marcas del mes</b> (la impresión de la intranet). La app lo lee y te dice qué días encontró.</li>
    <li>Compara tus marcas con las de la intranet y avisa si difieren más de 10 minutos.</li>
@@ -816,6 +816,6 @@ if('serviceWorker' in navigator && location.protocol==='https:' && /github\.io$/
 }
 loadLocs().then(()=>{ if(LS.get('hs_autogps',true)) locate(); });
 </script>
-<script src="viaticos.js?v=28"></script>
+<script src="viaticos.js?v=29"></script>
 </body>
 </html>

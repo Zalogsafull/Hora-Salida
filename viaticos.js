@@ -48,8 +48,8 @@ const interCuenta = v => v.tipo==='C100' && !!v.tInter && (v.inter||[]).some(p=>
 function locSalida(v){ const l=v.cSalLoc&&!String(v.cSalLoc).startsWith('otra:')?byId(v.cSalLoc):null; return l?corto(l.localidad):''; }
 function interOrdenadas(v){ return (v.inter||[]).filter(p=>p.h).sort((a,b)=>((a.f||'')+a.h).localeCompare((b.f||'')+b.h)); }
 // Renglones de la planilla.
-// C100: los nodos en orden cronológico son comienzo → (marca de entrada, si hay más de una localidad) →
-// marcas intermedias → finalización. Toda marca intermedia cargada aparece en algún renglón.
+// C100 en varias ciudades: un renglón por ciudad (termina en la última marca hecha ahí; el siguiente la repite).
+// C100 en una sola ciudad con marcas intermedias: comienzo → marcas → finalización, todas en algún renglón:
 //   · Cada renglón va de un nodo al siguiente y lleva la localidad de la marca donde termina.
 //   · Dos marcas del mismo día y la misma localidad van juntas en un renglón (no se repiten).
 //   · Si cambia la localidad, o una marca queda sola, se repite: cierra un renglón y abre el siguiente.
@@ -61,6 +61,15 @@ function renglones(v){
   const varias = v.tipo==='C100' && !!v.cEnt && lugares.size>1;
   if(!varias && !inter.length) return formatear(v, [[ini,fin]]);
   const marcas=[...(varias?[{loc:v.localidad,f:v.fIni,h:v.cEnt}]:[]), ...inter].sort((a,b)=>((a.f||'')+a.h).localeCompare((b.f||'')+b.h));
+  if(varias){
+    // Varias ciudades: un renglón por ciudad, en el orden del recorrido. Cada renglón termina en la última marca
+    // hecha en esa ciudad (aunque sea al otro día, donde se pasó la noche) y el siguiente empieza repitiendo esa marca.
+    const tramos=[]; const add=(loc,fin2)=>{ const u=tramos[tramos.length-1]; if(u && norm(u.loc||'')===norm(loc||'')) u.fin=fin2; else tramos.push({loc,fin:fin2}); };
+    for(const m of marcas) add(m.loc, {f:m.f,h:m.h});
+    add(fin.loc, {f:fin.f,h:fin.h});
+    let desde={f:ini.f,h:ini.h};
+    return formatear(v, tramos.map(t=>{ const par=[{loc:t.loc,...desde}, t.fin]; desde=t.fin; return par; }));
+  }
   const n=[ini, ...marcas, fin], N=n.length;
   const mismoDia=(x,y)=>x&&y&&(x.f||'')===(y.f||''), mismoLugar=(x,y)=>x&&y&&norm(x.loc||'')===norm(y.loc||'');
   const restanDia=k=>{ let c=0; for(let t=k;t<N && mismoDia(n[t],n[k]);t++) c++; return c; };
