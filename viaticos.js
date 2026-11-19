@@ -301,7 +301,7 @@ function pintar(){
       const fin = v.fFin&&v.hFin ? fDM(v.fFin)+' '+v.hFin : '<span class="open">sin terminar</span>';
       const pr=probs[v.id];
       return '<div class="vit'+(pr.length?' rev':'')+'" data-id="'+esc(v.id)+'"><div class="t1">'+(pr.length?'<span class="est mal">!</span>':'<span class="est ok">✓</span>')+esc(v.localidad||'—')+'</div><div class="t2">'+fDM(v.fIni)+' '+esc(v.hIni||'--:--')+' → '+fin+
-        (nm||nc?' · '+(nm?'🕒'+nm+' ':'')+(nc?'🧾'+nc:''):'')+(interCuenta(v)?' · +'+(v.inter||[]).filter(p=>p.h).length+' marcas':'')+(montoLoco(v)?' · 🚌'+pesos(montoLoco(v)):'')+(montoAloj(v)?' · 🛏'+pesos(montoAloj(v)):'')+'</div>'+
+        (nm||nc?' · '+(nm?'🕒'+nm+' ':'')+(nc?'🧾'+nc:''):'')+(v.auto&&v.auto.length?' · 🔄 intranet':'')+(interCuenta(v)?' · +'+(v.inter||[]).filter(p=>p.h).length+' marcas':'')+(montoLoco(v)?' · 🚌'+pesos(montoLoco(v)):'')+(montoAloj(v)?' · 🛏'+pesos(montoAloj(v)):'')+'</div>'+
         (pr.length?'<ul class="probs">'+pr.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul>':'')+'</div>';
     }).join('');
   };
@@ -394,6 +394,8 @@ function abrirEditor(v){
   const pr = nuevo ? [] : problemas(R.datos.v[R.ed.id], viaticos());
   $('vRevisar').innerHTML = pr.length ? '<b>Para revisar:</b><ul class="probs">'+pr.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul>' : '';
   $('vRevisar').classList.toggle('hide',!pr.length);
+  $('vAuto').textContent = (!nuevo && R.ed.auto && R.ed.auto.length) ? '🔄 Completado con el PDF de la intranet: '+R.ed.auto.join(', ')+'. Revisalo y corregí si hace falta.' : '';
+  $('vAuto').classList.toggle('hide', !$('vAuto').textContent);
   pintarTipo(); pintarAdj();
   $('dlgV').showModal();
 }
@@ -528,7 +530,7 @@ $('vForm').addEventListener('submit',e=>{
   if(v.tLoco && (v.locos||[]).some(l=>fueraRango(l.f)) || v.tAloj && (v.alojs||[]).some(a=>fueraRango(a.f))){ $('vErr').textContent='Hay locomoción o alojamiento con un día fuera del viático.'; return; }
   (v._quitados||[]).filter(a=>!(v._subidos||[]).includes(a)).forEach(a=>borrarDrive(a.drive));
   (v._quitados||[]).filter(a=>(v._subidos||[]).includes(a)).forEach(a=>borrarDrive(a.drive));
-  const limpio={...v, t:Date.now(), adj:(v.adj||[]).map(({_blob,...a})=>a)}; delete limpio._nuevo; delete limpio._ip; delete limpio._lp; delete limpio.loco; delete limpio._ap; delete limpio.aloj; delete limpio._legIni; delete limpio._legFin; delete limpio._subidos; delete limpio._quitados;
+  const limpio={...v, t:Date.now(), adj:(v.adj||[]).map(({_blob,...a})=>a)}; delete limpio._nuevo; delete limpio._ip;  delete limpio._lp; delete limpio.loco; delete limpio._ap; delete limpio.aloj; delete limpio._legIni; delete limpio._legFin; delete limpio._subidos; delete limpio._quitados;
   R.datos.v[v.id]=limpio; R.mes=v.fIni.slice(0,7);
   $('dlgV').close(); cambio(); toast('Viático guardado');
 });
@@ -792,8 +794,56 @@ async function chequearViatico(v){
   }
   return w;
 }
+/* --- completar con la intranet lo que no cargaste (nunca pisa lo que pusiste vos) --- */
+const DEPTO_ABREV={mvd:'Montevideo',can:'Canelones',mal:'Maldonado',mdo:'Maldonado',roc:'Rocha',rch:'Rocha',lav:'Lavalleja',tyt:'Treinta y Tres',
+  cla:'Cerro Largo',riv:'Rivera',tbo:'Tacuarembó',tac:'Tacuarembó',art:'Artigas',sal:'Salto',slt:'Salto',pay:'Paysandú',pys:'Paysandú',
+  rne:'Río Negro',rng:'Río Negro',sor:'Soriano',col:'Colonia',sjo:'San José',sjs:'San José',flo:'Flores',fda:'Florida',fla:'Florida',dur:'Durazno',dzo:'Durazno'};
+// "614 - Lav Minas" → Minas · "607 - Cla Melo02_PE" → Melo · "580 - Tyt Ciudad …" → Treinta y Tres C.T.
+function locDeOrigen(o){
+  if(!o) return null;
+  const t=norm(String(o).replace(/^\s*\d+\s*-\s*/,''));
+  const cands=locs.map(l=>({l,n:norm(corto(l.localidad))})).filter(x=>x.n.length>=4).sort((a,b)=>b.n.length-a.n.length);
+  for(const c of cands){ const k=t.indexOf(c.n); if(k>=0 && (k===0 || !/[a-z]/.test(t[k-1])) && !/[a-z]/.test(t[k+c.n.length]||'')) return c.l; }
+  const dep=DEPTO_ABREV[t.slice(0,3)];
+  if(dep){ const en=locs.filter(l=>norm(l.departamento)===norm(dep));
+    return en.find(l=>/c\.?\s*t\.?\s*$/i.test(l.localidad.trim())) || en.find(l=>norm(corto(l.localidad))===norm(dep)) || (en.length===1?en[0]:null); }
+  return null;
+}
+function locEntrada(v){ return (v.cEntLoc && byId(v.cEntLoc)) || locs.find(l=>norm(corto(l.localidad))===norm(v.localidad||'')) || null; }
+async function completarDesdeIntranet(){
+  let n=0;
+  for(const v of delMes(R.mes)){
+    if(v.cSal) continue;                                   // ya lo terminaste vos: queda como está
+    if(!mesesDe(v).some(m=>((R.datos.marcasMes||{})[m]||{}).drive)) continue;
+    const fin=v.fFin||v.fIni;
+    const filas=(await marcasIntranet(v)).filter(r=>r.f>=v.fIni && r.f<=fin).sort((a,b)=>(a.f+(a.ent||'')).localeCompare(b.f+(b.ent||'')));
+    if(!filas.length) continue;
+    const marcas=[]; for(const r of filas){ if(r.ent) marcas.push({f:r.f,h:r.ent,o:r.oEnt,tipo:'e'}); if(r.sal) marcas.push({f:r.f,h:r.sal,o:r.oSal,tipo:'s'}); }
+    if(!marcas.length) continue;
+    const x={...v}, auto=[];
+    const primera=marcas[0], ultima=marcas[marcas.length-1];
+    if(!x.cEnt && primera.f===x.fIni){ x.cEnt=primera.h; auto.push('entrada'); if(!x.cEntLoc){ const l=locDeOrigen(primera.o); if(l){ x.cEntLoc=l.id; if(!x.localidad) x.localidad=corto(l.localidad); } } }
+    if(ultima.tipo==='s' && ultima.f===fin && marcas.length>1){
+      x.cSal=ultima.h; auto.push('salida');
+      const l=locDeOrigen(ultima.o); if(l) x.cSalLoc=l.id;
+      if(x.tipo==='C100' && !(x.inter||[]).length){
+        const medio=marcas.slice(1,-1);
+        if(medio.length){ x.tInter=true; x.inter=medio.map(m=>{ const lm=locDeOrigen(m.o); return {loc: lm?corto(lm.localidad):x.localidad, f:m.f, h:m.h}; }); auto.push('marcas intermedias'); }
+      }
+    }
+    if(!auto.length) continue;
+    const le=locEntrada(x), ls=(x.cSalLoc&&byId(x.cSalLoc))||le;
+    if(x.cEnt && le) x.hIni=hhmm(toMin(x.cEnt)-toMin(le.horas));
+    if(x.cSal && ls) x.hFin=hhmm(toMin(x.cSal)+toMin(ls.horas));
+    x.auto=[...new Set([...(v.auto||[]),...auto])]; x.t=Date.now();
+    R.datos.v[v.id]=x; n++;
+  }
+  if(n){ cambio(); toast(n+' viático(s) completado(s) con las marcas de la intranet'); }
+  return n;
+}
 let _chkFirma='';
 async function chequearMes(){
+  try{ await completarDesdeIntranet(); }catch(e){ console.error(e); }
   const lista=delMes(R.mes); const nuevo={};
   for(const v of lista){ try{ const w=await chequearViatico(v); if(w&&w.length) nuevo[v.id]=w; }catch(e){} }
   const firma=JSON.stringify(nuevo);
@@ -984,23 +1034,11 @@ function desdeCalculadora(){
   const r=compute();
   document.querySelector('nav button[data-tab="reg"]').click();
   if(!conectado()){ toast('Iniciá sesión con Google para guardar tus viáticos'); return; }
-  const t = tipo==='C100' ? 'C100' : 'C200';
-  // si hay un viático sin terminar, se completa ese
-  const abierto = r.salFic!=null ? viaticos().filter(v=>!v.hFin && v.tipo===t).sort((a,b)=>(b.fIni+b.hIni).localeCompare(a.fIni+a.hIni))[0] : null;
-  if(abierto){
-    abrirEditor(abierto);
-    $('vFFin').value=isoHoy();
-    if(r.ls){ opcionesLoc($('vCSalLoc'), r.ls.id); } $('vCSal').value=P.marcaSal; calcEditor();
-    toast('Completando el viático del '+fDM(abierto.fIni));
-    return;
-  }
-  const dosDias = tipo==='C200_2';
-  const v={id:uid(), tipo:t, localidad: r.le?corto(r.le.localidad):'', loco:0, aloj:0, tLoco:false, tAloj:false, adj:[],
-    fIni: dosDias && r.salFic!=null ? isoHoy(-1) : isoHoy(),
-    hIni: r.entFic!=null ? hhmm(r.entFic) : '',
-    fFin: dosDias && r.salFic==null ? isoHoy(1) : isoHoy(),
-    hFin: r.salFic!=null ? hhmm(r.salFic) : '',
-    cEntLoc: r.le?r.le.id:'', cEnt:P.marcaEnt, cSalLoc: r.ls?r.ls.id:'', cSal:P.marcaSal};
+  // tipo y días de la calculadora; la marca de salida se completa después (a mano o con el PDF de la intranet)
+  const v={id:uid(), tipo:clase, localidad: r.le?corto(r.le.localidad):'', loco:0, aloj:0, tLoco:false, tAloj:false, adj:[],
+    fIni: isoHoy(), fFin: isoHoy(dias-1),
+    hIni: r.entFic!=null ? hhmm(r.entFic) : '', hFin:'',
+    cEntLoc: r.le?r.le.id:'', cEnt:P.marcaEnt, cSalLoc: r.ls?r.ls.id:'', cSal:''};
   abrirEditor(v);
 }
 

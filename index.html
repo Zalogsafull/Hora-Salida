@@ -153,6 +153,10 @@
   .guia-puntos i{width:8px;height:8px;border-radius:50%;background:var(--line)}
   .guia-puntos i.on{background:var(--pri2);width:20px;border-radius:4px}
   .guia-nav{display:grid;grid-template-columns:1fr 1.4fr;gap:8px}
+  .dias{display:flex;align-items:center;justify-content:center;gap:14px;margin-top:12px}
+  .dias span{font-weight:600;color:var(--muted)}
+  .dias b{font-size:24px;min-width:28px;text-align:center;font-variant-numeric:tabular-nums}
+  .paso{width:44px;height:44px;border-radius:50%;border:1px solid var(--line);background:var(--bg);color:var(--ink);font-size:22px;cursor:pointer}
   .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#14202b;color:#fff;padding:10px 16px;border-radius:10px;font-size:14px;z-index:20;max-width:90vw}
 </style>
 </head>
@@ -172,11 +176,17 @@
 <!-- ============ CALCULAR ============ -->
 <section id="tab-calc">
   <div class="card">
-    <div class="seg" id="tipoSeg">
-      <button type="button" data-t="C100">C100<small>1 o más días · 7:15</small></button>
-      <button type="button" data-t="C200_1" class="on">C200<small>1 día · 12:00</small></button>
-      <button type="button" data-t="C200_2">C200<small>2 días · 10:00</small></button>
+    <div class="seg" id="tipoSeg" style="grid-template-columns:1fr 1fr">
+      <button type="button" data-c="C100">C100</button>
+      <button type="button" data-c="C200" class="on">C200</button>
     </div>
+    <div class="dias">
+      <span>Días</span>
+      <button type="button" class="paso" id="diasMenos" aria-label="Un día menos">−</button>
+      <b id="diasN">1</b>
+      <button type="button" class="paso" id="diasMas" aria-label="Un día más">＋</button>
+    </div>
+    <div class="hint" id="tipoReq" style="text-align:center"></div>
   </div>
 
   <div class="card">
@@ -325,6 +335,7 @@
   <form id="vForm">
     <div class="dlghead"><h3 id="vTitle">Viático</h3><button type="button" class="cerrar" id="vCerrar" aria-label="Cerrar sin guardar">×</button></div>
     <div id="vRevisar" class="revbox hide"></div>
+    <div id="vAuto" class="tip hide" style="background:var(--soft);border-radius:10px;padding:8px 10px;font-size:13px;margin-bottom:10px"></div>
     <div class="seg" id="vTipo" style="grid-template-columns:1fr 1fr;margin-bottom:12px">
       <button type="button" data-t="C100">C100<small>1 o más días</small></button>
       <button type="button" data-t="C200">C200<small>1 o más días</small></button>
@@ -450,7 +461,11 @@ let apiUrl = LS.get('hs_api', API_URL_DEFAULT) || API_URL_DEFAULT;
 let locs = LS.get('hs_locs2', null) || SEED.slice();
 let online = false;
 let req = Object.assign({}, REQ_DEFAULT, LS.get('hs_req', {}));
-let tipo = LS.get('hs_tipo','C200_1');
+let clase = LS.get('hs_clase', String(LS.get('hs_tipo','C200_1')).slice(0,4)==='C100'?'C100':'C200');
+let dias = 1;
+// tipo de cálculo: C100 (7:15 dure lo que dure) · C200 1 día (12:00) · C200 2 o más días (10:00 el día de la vuelta)
+let tipo = clase==='C100' ? 'C100' : 'C200_1';
+function fijarTipo(){ tipo = clase==='C100' ? 'C100' : (dias>1 ? 'C200_2' : 'C200_1'); }
 // datos personales: SOLO en memoria
 const P = {ent:null, sal:null, marcaEnt:'', marcaSal:'', salTouched:false};
 
@@ -526,7 +541,9 @@ for(const w of ['ent','sal']){
 /* ---------- render cálculo ---------- */
 function render(){
   const r=compute();
-  document.querySelectorAll('#tipoSeg button').forEach(x=>x.classList.toggle('on',x.dataset.t===tipo));
+  document.querySelectorAll('#tipoSeg button').forEach(x=>x.classList.toggle('on',x.dataset.c===clase));
+  $('diasN').textContent=dias; $('diasMenos').disabled=dias<=1;
+  $('tipoReq').textContent = clase==='C100' ? 'C100 · cumplís '+dur(toMin(req.C100))+' h' : (dias>1 ? 'C200 de '+dias+' días · '+dur(toMin(req.C200_2))+' h el día de la vuelta' : 'C200 de 1 día · '+dur(toMin(req.C200_1))+' h');
   $('salTitle').textContent = tipo==='C200_2' ? 'Salida · día de la vuelta' : 'Salida';
   $('entHint').textContent = r.le ? ('Viaje '+dur(r.ida)+(r.entFic!=null?' · hora de entrada '+hhmm(r.entFic)+dayNote(r.entFic):'')) : '';
   $('salHint').textContent = r.ls ? ('Viaje '+dur(r.vta)) : '';
@@ -558,7 +575,9 @@ function render(){
 
 /* ---------- eventos cálculo ---------- */
 $('marcaEnt').addEventListener('input', e=>{ P.marcaEnt=e.target.value; render(); });
-$('tipoSeg').addEventListener('click', e=>{ const b=e.target.closest('button'); if(!b) return; tipo=b.dataset.t; LS.set('hs_tipo',tipo); render(); });
+$('tipoSeg').addEventListener('click', e=>{ const b=e.target.closest('button'); if(!b) return; clase=b.dataset.c; LS.set('hs_clase',clase); fijarTipo(); render(); });
+$('diasMas').addEventListener('click', ()=>{ if(dias<30){ dias++; fijarTipo(); render(); } });
+$('diasMenos').addEventListener('click', ()=>{ if(dias>1){ dias--; fijarTipo(); render(); } });
 $('btnClear').addEventListener('click', ()=>{
   P.ent=P.sal=null; P.marcaEnt=P.marcaSal=''; P.salTouched=false; P.salGps=false;
   $('marcaEnt').value=''; $('entDep').value=$('salDep').value='';
@@ -730,7 +749,6 @@ function loadCfg(){
   $('autoGps').checked=LS.get('hs_autogps',true);
   $('apiUrl').value=apiUrl;
   $('apiHint').textContent = apiUrl? '' : 'Sin esta URL la lista se lee de la planilla, pero se edita solo desde la planilla.';
-  document.querySelectorAll('#tipoSeg button').forEach(b=>{ b.querySelector('small').textContent=({C100:'1 o más días',C200_1:'1 día',C200_2:'2 o más días'})[b.dataset.t]+' · '+dur(toMin(req[b.dataset.t])); });
 }
 $('autoGps').addEventListener('change', e=>LS.set('hs_autogps',e.target.checked));
 for(const t in REQ_DEFAULT) $('req'+t).addEventListener('input', e=>{ if(e.target.value){ req[t]=e.target.value; LS.set('hs_req',req); loadCfg(); render(); } });
@@ -750,11 +768,11 @@ loadCfg(); renderLocs();
 const GUIA=[
  {i:'🕒', t:'Hora Salida', h:`<p>Calcula a qué hora podés hacer la marca de salida en tus viáticos y, si querés, lleva el registro del mes y arma el PDF para tu jefe.</p>
    <ul><li><b>Calcular</b>: la cuenta del día.</li><li><b>Viáticos</b>: tu registro mensual (opcional, con Google).</li><li><b>Localidades</b>: horas de viaje de cada lugar.</li><li><b>Ajustes</b>: horas a cumplir y este instructivo.</li></ul>`},
- {i:'🧮', t:'Calcular', h:`<ul><li>Elegí el tipo: <b>C100</b> (1 o más días · 7:15), <b>C200 1 día</b> (12:00) o <b>C200 2 o más días</b> (10:00 el día de la vuelta).</li>
+ {i:'🧮', t:'Calcular', h:`<ul><li>Elegí <b>C100</b> o <b>C200</b> y la cantidad de <b>días</b> con − / ＋. C100: 7:15 · C200 de 1 día: 12:00 · C200 de 2 o más días: 10:00 el día de la vuelta.</li>
    <li>Elegí departamento y ciudad de la <b>entrada</b> y cargá tu <b>marca de entrada</b>. Si estás cerca de una localidad de la lista, se elige sola por ubicación.</li>
    <li>Elegí la ciudad de <b>salida</b>: abajo aparece desde qué hora podés hacer la marca de salida.</li></ul>
    <div class="tip">Hora de entrada = marca − viaje de ida · Marca de salida desde = hora de entrada + horas a cumplir − viaje de vuelta.</div>`},
- {i:'📤', t:'Guardar', h:`<ul><li><b>Guardar viático</b> lo pasa a tu registro del mes con la entrada ya calculada.</li></ul>
+ {i:'📤', t:'Guardar', h:`<ul><li><b>Guardar viático</b> lo pasa a tu registro del mes con la entrada, los días y las localidades.</li><li>No hace falta cargar la marca de salida: a fin de mes, al subir el PDF de la intranet, la app completa las marcas que falten (salida, marcas intermedias y localidades).</li></ul>
    <div class="tip">Sin iniciar sesión no se guarda nada: las horas quedan solo en la pantalla.</div>`},
  {i:'📋', t:'Mis viáticos', h:`<ul><li>Entrá a <b>Viáticos → Iniciar sesión con Google</b>. Todo se guarda en la carpeta <b>Hora Salida</b> de tu Drive; nadie más lo ve.</li>
    <li>Tocá un viático para editarlo. Cargás la <b>marca de entrada</b> y la <b>de salida</b> (al otro día, si es de 2 días); las horas de comienzo y finalización se calculan solas.</li>
@@ -798,6 +816,6 @@ if('serviceWorker' in navigator && location.protocol==='https:' && /github\.io$/
 }
 loadLocs().then(()=>{ if(LS.get('hs_autogps',true)) locate(); });
 </script>
-<script src="viaticos.js?v=26"></script>
+<script src="viaticos.js?v=27"></script>
 </body>
 </html>
