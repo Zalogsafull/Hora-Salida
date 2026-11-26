@@ -379,6 +379,12 @@
       <div><span>Hora finalización</span><b id="vHFinTxt">--:--</b></div>
     </div>
     <div class="hint" id="vCalcHint" style="margin:-4px 0 10px"></div>
+    <div class="f" id="vLocPlaBox">
+      <label for="vLocPla">Localidad en la planilla</label>
+      <select id="vLocPla"></select>
+      <div class="g2 hide" id="vLocPlaOtra" style="margin-top:8px"><select id="vLPDep" aria-label="Departamento"></select><select id="vLPLoc" aria-label="Localidad"></select></div>
+      <div class="hint" id="vLocPlaHint"></div>
+    </div>
     <label class="chk"><input type="checkbox" id="vTLoco"> Tiene locomoción</label>
     <div class="adjbox hide" id="vLocoBox">
       <div class="hint" style="margin:0 0 8px">La de ida va en el primer renglón de la planilla y la de vuelta en el último.</div>
@@ -793,7 +799,7 @@ const GUIA=[
  {i:'🚌', t:'Locomoción y alojamiento', h:`<ul><li>Tildá <b>Tiene locomoción</b>: cada una es <b>Ida</b> (primer día) o <b>Vuelta</b> (último día), con monto y comprobante.</li>
    <li>Tildá <b>Tiene alojamiento</b>: día, monto y factura. Solo se cobra en <b>C100</b>; en C200 queda guardado pero no va al PDF.</li>
    <li>El comprobante se sube en el recuadro punteado (foto o PDF).</li></ul>`},
- {i:'🧾', t:'Renglones de la planilla', h:`<ul><li><b>C200</b>: un renglón, del comienzo a la finalización.</li>
+ {i:'🧾', t:'Renglones de la planilla', h:`<ul><li><b>C200</b>: un renglón, del comienzo a la finalización. La localidad es la que elijas en el viático; si no, la automática: donde pasaste la noche según la intranet o, si no se sabe, la más lejana del recorrido.</li>
    <li><b>C100 en una sola localidad</b>: un renglón.</li>
    <li><b>C100 con otra localidad de salida</b>: se parte en la marca de entrada, un renglón por localidad.</li>
    <li><b>C100 en varias ciudades</b>: un renglón por ciudad; cada uno termina en la última marca hecha en esa ciudad (aunque sea al otro día) y el siguiente la repite.</li><li><b>C100 en una ciudad con marcas intermedias</b>: las del mismo día van juntas; si queda una sola, se repite.</li>
@@ -833,6 +839,6 @@ function ponerHoraActual(){ if(!P.marcaEnt){ P.marcaEnt=horaActual(); $('marcaEn
 ponerHoraActual();
 loadLocs().then(()=>{ if(LS.get('hs_autogps',true)) locate(); });
 </script>
-<script src="viaticos.js?v=30"></script>
+<script src="viaticos.js?v=31"></script>
 </body>
 </html>

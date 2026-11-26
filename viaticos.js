@@ -54,12 +54,27 @@ function interOrdenadas(v){ return (v.inter||[]).filter(p=>p.h).sort((a,b)=>((a.
 //   · Dos marcas del mismo día y la misma localidad van juntas en un renglón (no se repiten).
 //   · Si cambia la localidad, o una marca queda sola, se repite: cierra un renglón y abre el siguiente.
 //   · Sin marcas intermedias y en una sola localidad: un solo renglón.
+// C200: la localidad de la planilla es la que elegiste; si no, la automática:
+//   1) donde pasaste la noche según la intranet (última marca antes del día de la vuelta)
+//   2) si no se puede saber, la más lejana del recorrido (más horas de viaje)
+function locPorNombre(n){ return n ? locs.find(l=>norm(corto(l.localidad))===norm(n) || norm(l.localidad)===norm(n)) : null; }
+function lugaresDe(v){
+  const out=[v.localidad, locSalida(v), ...(v.inter||[]).map(p=>p.loc), v.locNoche].filter(Boolean).map(n=>corto(n));
+  return [...new Set(out.map(n=>norm(n)))].map(k=>out.find(n=>norm(n)===k));
+}
+function masLejana(nombres){ let mejor=null, h=-1; for(const n of nombres){ const l=locPorNombre(n); const m=l?toMin(l.horas):null; if(m!=null && m>h){ h=m; mejor=n; } } return mejor; }
+function locAuto(v){
+  if(v.locNoche) return {nombre:v.locNoche, motivo: v.fFin && v.fFin!==v.fIni ? 'pasaste la noche ahí, según las marcas de la intranet' : 'la más lejana según las marcas de la intranet'};
+  const lej=masLejana(lugaresDe(v));
+  return lej ? {nombre:lej, motivo:'la más lejana del recorrido'} : {nombre:v.localidad||'', motivo:''};
+}
+function locPlanilla(v){ return v.locPla || locAuto(v).nombre || v.localidad; }
 function renglones(v){
   const ini={loc:v.localidad,f:v.fIni,h:v.hIni}, fin={loc:locSalida(v)||v.localidad,f:v.fFin,h:v.hFin};
   const inter = interCuenta(v) ? interOrdenadas(v).map(p=>({loc:p.loc||v.localidad, f:p.f||v.fIni, h:p.h})) : [];
   const lugares=new Set([ini.loc, fin.loc, ...inter.map(p=>p.loc)].map(x=>norm(x||'')));
   const varias = v.tipo==='C100' && !!v.cEnt && lugares.size>1;
-  if(!varias && !inter.length) return formatear(v, [[ini,fin]]);
+  if(!varias && !inter.length) return formatear(v, [[v.tipo==='C200' ? {...ini, loc:locPlanilla(v)} : ini, fin]]);
   const marcas=[...(varias?[{loc:v.localidad,f:v.fIni,h:v.cEnt}]:[]), ...inter].sort((a,b)=>((a.f||'')+a.h).localeCompare((b.f||'')+b.h));
   if(varias){
     // Varias ciudades: un renglón por ciudad, en el orden del recorrido. Cada renglón termina en la última marca
@@ -309,7 +324,7 @@ function pintar(){
       const nm=0, nc=compsPDF(v).length;
       const fin = v.fFin&&v.hFin ? fDM(v.fFin)+' '+v.hFin : '<span class="open">sin terminar</span>';
       const pr=probs[v.id];
-      return '<div class="vit'+(pr.length?' rev':'')+'" data-id="'+esc(v.id)+'"><div class="t1">'+(pr.length?'<span class="est mal">!</span>':'<span class="est ok">✓</span>')+esc(v.localidad||'—')+'</div><div class="t2">'+fDM(v.fIni)+' '+esc(v.hIni||'--:--')+' → '+fin+
+      return '<div class="vit'+(pr.length?' rev':'')+'" data-id="'+esc(v.id)+'"><div class="t1">'+(pr.length?'<span class="est mal">!</span>':'<span class="est ok">✓</span>')+esc((v.tipo==='C200'?locPlanilla(v):v.localidad)||'—')+'</div><div class="t2">'+fDM(v.fIni)+' '+esc(v.hIni||'--:--')+' → '+fin+
         (nm||nc?' · '+(nm?'🕒'+nm+' ':'')+(nc?'🧾'+nc:''):'')+(v.auto&&v.auto.length?' · 🔄 intranet':'')+(interCuenta(v)?' · +'+(v.inter||[]).filter(p=>p.h).length+' marcas':'')+(montoLoco(v)?' · 🚌'+pesos(montoLoco(v)):'')+(montoAloj(v)?' · 🛏'+pesos(montoAloj(v)):'')+'</div>'+
         (pr.length?'<ul class="probs">'+pr.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul>':'')+'</div>';
     }).join('');
@@ -360,8 +375,36 @@ $('vInterAdd').addEventListener('click',()=>{ leerInter(); const u=R.ed.inter[R.
 $('vInter').addEventListener('change',e=>{ if(e.target.classList.contains('idep')) llenarLocs(e.target.closest('.irow').querySelector('.iloc'), e.target.value, ''); });
 $('vSalDep').addEventListener('change',e=>{ llenarLocs($('vCSalLoc'), e.target.value, ''); calcEditor(); });
 $('vInter').addEventListener('click',e=>{ const x=e.target.closest('.x'); if(!x) return; leerInter(); R.ed.inter.splice(+x.closest('.irow').dataset.i,1); pintarInter(); });
+function pintarLocPla(){
+  const c200=R.ed.tipo==='C200'; $('vLocPlaBox').classList.toggle('hide',!c200); if(!c200) return;
+  const tmp={...R.ed, localidad:locDeSel()||R.ed.localidad, cSalLoc:$('vCSalLoc').value||R.ed.cSalLoc};
+  const a=locAuto(tmp), lug=lugaresDe(tmp), elegida=R.ed.locPla||'';
+  const enLista=!elegida || lug.some(n=>norm(n)===norm(elegida));
+  $('vLocPla').innerHTML='<option value="">Automática: '+esc(a.nombre||'—')+'</option>'+
+    (lug.length?'<optgroup label="Del recorrido">'+lug.map(n=>'<option value="n:'+esc(n)+'"'+(norm(n)===norm(elegida)?' selected':'')+'>'+esc(n)+'</option>').join('')+'</optgroup>':'')+
+    '<option value="otra"'+(!enLista?' selected':'')+'>Otra localidad…</option>';
+  $('vLocPlaOtra').classList.toggle('hide', enLista);
+  if(!enLista){ const l=locPorNombre(elegida); const deps=[...new Set(locs.map(x=>x.departamento))].sort(cmp);
+    $('vLPDep').innerHTML='<option value="">Departamento…</option>'+deps.map(d=>'<option'+(l&&d===l.departamento?' selected':'')+'>'+esc(d)+'</option>').join('');
+    llenarLocs($('vLPLoc'), l?l.departamento:'', l?l.id:''); }
+  $('vLocPlaHint').textContent = elegida ? 'Elegida por vos. En la planilla sale: '+elegida : (a.motivo ? 'Automática: '+a.motivo+'.' : '');
+}
+function leerLocPla(){
+  const v=$('vLocPla').value;
+  if(!v) return ''; if(v.startsWith('n:')) return v.slice(2);
+  const l=byId($('vLPLoc').value); return l?corto(l.localidad):(R.ed.locPla||'');
+}
+$('vLocPla').addEventListener('change',e=>{
+  if(e.target.value==='otra'){ R.ed.locPla=R.ed.locPla||''; $('vLocPlaOtra').classList.remove('hide');
+    const deps=[...new Set(locs.map(x=>x.departamento))].sort(cmp);
+    $('vLPDep').innerHTML='<option value="">Departamento…</option>'+deps.map(d=>'<option>'+esc(d)+'</option>').join(''); llenarLocs($('vLPLoc'),'',''); return; }
+  R.ed.locPla=leerLocPla(); pintarLocPla();
+});
+$('vLPDep').addEventListener('change',e=>llenarLocs($('vLPLoc'),e.target.value,''));
+$('vLPLoc').addEventListener('change',()=>{ R.ed.locPla=leerLocPla(); $('vLocPlaHint').textContent='Elegida por vos. En la planilla sale: '+R.ed.locPla; });
 function pintarTipo(){
   document.querySelectorAll('#vTipo button').forEach(b=>b.classList.toggle('on',b.dataset.t===R.ed.tipo));
+  pintarLocPla();
   $('vAlojC200').classList.toggle('hide', R.ed.tipo!=='C200');
   if($('vInter')) { leerInter(); pintarInter(); }
 }
@@ -431,6 +474,7 @@ $('vLocSel').addEventListener('focus',()=>{ _entAnt=$('vLocSel').value; });
 $('vLocSel').addEventListener('change',seguirSalida);
 function leerEditor(){
   Object.assign(R.ed,{localidad:locDeSel(), fIni:$('vFIni').value, hIni:$('vHIni').value, fFin:$('vFFin').value, hFin:$('vHFin').value,
+    locPla: R.ed.tipo==='C200' ? leerLocPla() : (R.ed.locPla||''),
     tInter:$('vTInter').checked, inter:(leerInter(), R.ed.inter.filter(p=>p.h||p.loc)),
     tLoco:$('vTLoco').checked, tAloj:$('vTAloj').checked,
     locos:(leerLocos(), R.ed.locos.map(l=>({id:l.id, tramo:l.tramo, f:l.f, monto:Math.max(0,Math.round(+l.monto||0))}))),
@@ -824,10 +868,17 @@ async function completarDesdeIntranet(){
   for(const v of delMes(R.mes)){
     // lo que cargaste vos no se toca; en un C100 sin marcas intermedias se agregan las de otras ciudades
     const faltaC100 = v.tipo==='C100' && !(v.inter||[]).length;
-    if(v.cSal && !faltaC100) continue;
     if(!mesesDe(v).some(m=>((R.datos.marcasMes||{})[m]||{}).drive)) continue;
     const fin=v.fFin||v.fIni;
     const filas=(await marcasIntranet(v)).filter(r=>r.f>=v.fIni && r.f<=fin).sort((a,b)=>(a.f+(a.ent||'')).localeCompare(b.f+(b.ent||'')));
+    if(v.tipo==='C200' && filas.length){
+      const ms=[]; for(const r of filas){ if(r.ent) ms.push({f:r.f,h:r.ent,o:r.oEnt}); if(r.sal) ms.push({f:r.f,h:r.sal,o:r.oSal}); }
+      let noche=null;
+      if(fin>v.fIni){ const antes=ms.filter(m=>m.f<fin); const u=antes[antes.length-1]; const l=u&&locDeOrigen(u.o); if(l) noche=corto(l.localidad); }
+      else noche=masLejana(ms.map(m=>{ const l=locDeOrigen(m.o); return l?corto(l.localidad):null; }).filter(Boolean));
+      if(noche && noche!==v.locNoche){ R.datos.v[v.id]={...R.datos.v[v.id], locNoche:noche, t:Date.now()}; n++; }
+    }
+    if(v.cSal && !faltaC100) continue;
     if(!filas.length) continue;
     const marcas=[]; for(const r of filas){ if(r.ent) marcas.push({f:r.f,h:r.ent,o:r.oEnt,tipo:'e'}); if(r.sal) marcas.push({f:r.f,h:r.sal,o:r.oSal,tipo:'s'}); }
     if(!marcas.length) continue;
@@ -851,7 +902,7 @@ async function completarDesdeIntranet(){
     if(x.cEnt && le) x.hIni=hhmm(toMin(x.cEnt)-toMin(le.horas));
     if(x.cSal && ls) x.hFin=hhmm(toMin(x.cSal)+toMin(ls.horas));
     x.auto=[...new Set([...(v.auto||[]),...auto])]; x.t=Date.now();
-    R.datos.v[v.id]=x; n++;
+    R.datos.v[v.id]={...x, locNoche:(R.datos.v[v.id]||x).locNoche}; n++;
   }
   if(n){ cambio(); toast(n+' viático(s) completado(s) con las marcas de la intranet'); }
   return n;
