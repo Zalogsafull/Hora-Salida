@@ -491,11 +491,23 @@ function calcEditor(){
   else hf=R.ed._legFin||'';
   $('vHIni').value=hi; $('vHFin').value=hf;
   $('vHIniTxt').textContent=hi||'--:--'; $('vHFinTxt').textContent=hf||'--:--';
+  // si todavía no cargaste la marca de salida, se muestra en gris la hora desde la que podías marcar
+  const sug=$('vCSalSug'), vac=!$('vCSal').value;
+  let txt='';
+  if(vac && hi && ls){
+    const fi=$('vFIni').value, ff=$('vFFin').value||fi;
+    const need=toMin(R.ed.tipo==='C100' ? req.C100 : (ff>fi ? req.C200_2 : req.C200_1));
+    txt=hhmm(toMin(hi)+need-toMin(ls.horas));
+  }
+  sug.textContent = txt ? 'desde '+txt : '';
+  if(vac && txt) msg.push('Marca de salida sugerida: desde '+txt+' (si no la cargás, se completa con la intranet)');
   $('vCalcHint').textContent=msg.join(' · ');
+  sug.classList.toggle('hide', !(vac && txt)); $('vCSal').classList.toggle('vacio', !!(vac && txt));
 }
+['vFIni','vFFin'].forEach(id=>$(id).addEventListener('change',calcEditor));
 ['vLocSel','vCSalLoc','vCEnt','vCSal'].forEach(id=>{ $(id).addEventListener('input',calcEditor); $(id).addEventListener('change',calcEditor); });
 
-$('vTipo').addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b) return; R.ed.tipo=b.dataset.t; pintarTipo(); });
+$('vTipo').addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b) return; R.ed.tipo=b.dataset.t; pintarTipo(); calcEditor(); });
 // días del viático (fecha comienzo → finalización) para elegir el día de locomoción y alojamiento
 function diasRango(){
   const a=$('vFIni').value, b=$('vFFin').value||a; if(!a) return [];
